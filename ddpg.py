@@ -48,7 +48,7 @@ def ddpg(agent, env, args):
             if done: break
 
             # collect new experience
-            action = agent(state)
+            action = agent.forward(state)
             noisy_action = utils.exploration_noise(action, random_process, eps)
             next_state, reward, done, info = env.step(noisy_action)
             if args.render: env.render()

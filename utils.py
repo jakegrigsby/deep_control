@@ -5,8 +5,26 @@ import os
 import numpy as np
 import torchvision
 import torch
+import gym
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+class FlattenRoboticsDictWrapper(gym.Wrapper):
+    def __init_(self, env):
+        super().__init__(env)
+        self.keys = keys
+
+    def step(self, action):
+        obs_dict, rew, done, info = self.env.step(action)
+        return self._flatten_obs(obs_dict), rew, done, info
+    
+    def reset(self):
+        return self._flatten_obs(self.env.reset())
+
+    def _flatten_obs(self, obs_dict):
+        return np.concatenate((obs_dict['observation'], obs_dict['desired_goal']))
+
 
 Transition = namedtuple('Transition', ('state', 'action', 'reward', 'next_state', 'done'))
 

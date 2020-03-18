@@ -31,10 +31,10 @@ class NAFAgent:
         state = torch.from_numpy(np.expand_dims(state, 0).astype(np.float32))
         with torch.no_grad():
             mu, _, _ = self.network(state)
-        return np.squeeze(mu.cpu(), 0)
+        return np.squeeze(mu.cpu().numpy(), 0)
 
 
-class ActorCriticAgent(torch.nn.Module):
+class DDPGAgent():
     def to(self, device):
         self.actor = self.actor.to(device)
         self.critic = self.critic.to(device)
@@ -66,12 +66,12 @@ class ActorCriticAgent(torch.nn.Module):
         self.actor.eval()
         with torch.no_grad():
             action = self.actor(state)
-        return np.squeeze(action.cpu(), 0)
+        return np.squeeze(action.cpu().numpy(), 0)
  
 
 #############################################
 
-class PendulumACAgent(ActorCriticAgent):
+class PendulumDDPGAgent(DDPGAgent):
     def __init__(self):
         super().__init__()
         self.actor = nets.BaselineActor(3, 1)
@@ -87,7 +87,7 @@ class MountaincarNAFAgent(NAFAgent):
     def __init__(self):
         self.network = nets.BaselineNQF(2, 1)
 
-class MountaincarACAgent(ActorCriticAgent):
+class MountaincarDDPGAgent(DDPGAgent):
     def __init__(self):
         super().__init__()
         self.actor = nets.BaselineActor(2, 1)
@@ -99,7 +99,7 @@ class AntNAFAgent(NAFAgent):
     def __init__(self):
         self.network = nets.BaselineNQF(111, 8)
 
-class AntACAgent(ActorCriticAgent):
+class AntDDPGAgent(DDPGAgent):
     def __init__(self):
         super().__init__()
         self.actor = nets.BaselineActor(111, 8)
@@ -111,7 +111,7 @@ class WalkerNAFAgent(NAFAgent):
     def __init__(self):
         self.network = nets.BaselineNQF(17, 6)
 
-class WalkerACAgent(ActorCriticAgent):
+class WalkerDDPGAgent(DDPGAgent):
     def __init__(self):
         super().__init__()
         self.actor = nets.BaselineActor(17, 6)
@@ -123,7 +123,7 @@ class SwimmerNAFAgent(NAFAgent):
     def __init__(self):
         self.network = nets.BaselineNQF(8, 2)
 
-class SwimmerACAgent(ActorCriticAgent):
+class SwimmerDDPGAgent(DDPGAgent):
     def __init__(self):
         super().__init__()
         self.actor = nets.BaselineActor(8, 2)
@@ -135,7 +135,7 @@ class CheetahNAFAgent(NAFAgent):
     def __init__(self):
         self.network = nets.BaselineNQF(17, 6)
 
-class CheetahACAgent(ActorCriticAgent):
+class CheetahDDPGAgent(DDPGAgent):
     def __init__(self):
         super().__init__()
         self.actor = nets.BaselineActor(17, 6)
@@ -147,7 +147,7 @@ class ReacherNAFAgent(NAFAgent):
     def __init__(self):
         self.network = nets.BaselineNQF(11, 2)
 
-class ReacherACAgent(ActorCriticAgent):
+class ReacherDDPGAgent(DDPGAgent):
     def __init__(self):
         super().__init__()
         self.actor = nets.BaselineActor(11, 2)
@@ -159,7 +159,7 @@ class HopperNAFAgent(NAFAgent):
     def __init__(self):
         self.network = nets.BaselineNQF(11, 3)
 
-class HopperACAgent(ActorCriticAgent):
+class HopperDDPGAgent(DDPGAgent):
     def __init__(self):
         super().__init__()
         self.actor = nets.BaselineActor(11, 3)
@@ -171,10 +171,92 @@ class HumanoidNAFAgent(NAFAgent):
     def __init__(self):
         self.network = nets.BaselineNQF(376, 17)
 
-class HumanoidACAgent(ActorCriticAgent):
+HumanoidStandupNAFAgent = HumanoidNAFAgent
+
+class HumanoidDDPGAgent(DDPGAgent):
     def __init__(self):
         super().__init__()
         self.actor = nets.BaselineActor(376, 17)
         self.critic = nets.BaselineCritic(376, 17)
+
+HumanoidStandupDDPGAgent = HumanoidDDPGAgent
+##############################################
+
+# all v1s
+
+class FetchPushNAFAgent(NAFAgent):
+    def __init__(self):
+        self.network = nets.BaselineNQF(28, 4)
+
+class FetchReachNAFAgent(NAFAgent):
+    def __init__(self):
+        self.network = nets.BaselineNQF(13, 4)
+
+FetchSlideNAFAgent = FetchPushNAFAgent
+FetchPickAndPlaceNAFAgent = FetchPushNAFAgent
+
+
+class FetchPushDDPGAgent(DDPGAgent):
+    def __init__(self):
+        self.actor = nets.BaselineActor(28, 4)
+        self.critic = nets.BaselineCritic(28, 4)
+
+class FetchReachDDPGAgent(DDPGAgent):
+    def __init__(self):
+        self.actor = nets.BaselineActor(13, 4)
+        self.critic = nets.BaselineCritic(13, 4)
+
+FetchSlideDDPGAgent = FetchPushDDPGAgent
+FetchPickAndPlaceDDPGAgent = FetchPushDDPGAgent
+
+##############################################
+
+# all v0s
+
+class HandReachNAFAgent(NAFAgent):
+    def __init__(self):
+        self.network = nets.BaselineNQF(63+15, 20)
+
+class HandManipulateBlockNAFAgent(NAFAgent):
+    def __init__(self):
+        self.network = nets.BaselineNQF(61+7, 20)
+
+HandManipulateBlockRotateZNAFAgent = HandManipulateBlockNAFAgent
+HandManipulateBlockRotateParallelNAFAgent = HandManipulateBlockNAFAgent
+HandManipulateBlockRotateXYZNAFAgnet = HandManipulateBlockNAFAgent
+HandManipulateBlockFullNAFAgent = HandManipulateBlockNAFAgent
+
+HandManipulateEggNAFAgent = HandManipulateBlockNAFAgent
+HandManipulateEggRotateNAFAgent = HandManipulateBlockNAFAgent
+HandManipulateEggFullNAFAgent = HandManipulateBlockNAFAgent
+
+HandManipulatePenNAFAgent = HandManipulateBlockNAFAgent
+HandManipulatePenRotateNAFAgent = HandManipulateBlockNAFAgent
+HandManipulatePenFullNAFAgnet = HandManipulateBlockNAFAgent
+
+
+class HandReachDDPGAgent(DDPGAgent):
+    def __init__(self):
+        self.actor = nets.BaselineActor(63+15, 20)
+        self.critic = nets.BaselineCritic(63+15, 20)
+
+class HandManipulateBlockDDPGAgent(DDPGAgent):
+    def __init__(self):
+        self.actor = nets.BaselineActor(61+7, 20)
+        self.critic = nets.BaselineCritic(61+7, 20)
+
+HandManipulateBlockRotateZDDPGAgent = HandManipulateBlockDDPGAgent
+HandManipulateBlockRotateParallelDDPGAgent = HandManipulateBlockDDPGAgent
+HandManipulateBlockRotateXYZDDPGAgnet = HandManipulateBlockDDPGAgent
+HandManipulateBlockFullDDPGAgent = HandManipulateBlockDDPGAgent
+
+HandManipulateEggDDPGAgent = HandManipulateBlockDDPGAgent
+HandManipulateEggRotateDDPGAgent = HandManipulateBlockDDPGAgent
+HandManipulateEggFullDDPGAgent = HandManipulateBlockDDPGAgent
+
+HandManipulatePenDDPGAgent = HandManipulateBlockDDPGAgent
+HandManipulatePenRotateDDPGAgent = HandManipulateBlockDDPGAgent
+HandManipulatePenFullDDPGAgnet = HandManipulateBlockDDPGAgent
+
 
 
