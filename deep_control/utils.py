@@ -7,13 +7,14 @@ import torchvision
 import torch
 import gym
 
+import run
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class FlattenRoboticsDictWrapper(gym.Wrapper):
     def __init_(self, env):
         super().__init__(env)
-        self.keys = keys
 
     def step(self, action):
         obs_dict, rew, done, info = self.env.step(action)
@@ -36,6 +37,29 @@ def torch_and_pad(x):
         ).unsqueeze(0)
 
 
+def evaluate_agent(agent, env, args):
+    agent.eval()
+    returns = run.run(agent, env, args.eval_episodes, args.max_episode_steps, verbosity=0)
+    mean_return = returns.mean()
+    return mean_return
+
+def collect_rollout(agent, random_process, eps, env, args):
+    # collect new experience
+    state = env.reset()
+    random_process.reset_states()
+    done = False 
+    rollout = []
+    for step in range(args.max_episode_steps):
+        if done: break
+        action = agent.forward(state)
+        noisy_action = exploration_noise(action, random_process, eps)
+        next_state, reward, done, info = env.step(noisy_action)
+        if args.render: env.render()
+        rollout.append((state, noisy_action, reward, next_state, done, info))
+        state = next_state
+    return rollout
+
+
 class ReplayBuffer:
     
     def __init__(self, capacity):
@@ -48,9 +72,9 @@ class ReplayBuffer:
 
     def push(self, state, action, reward, next_state, done):
         # pad batch axis
-        state = torch_and_pad(state)
         action = torch_and_pad(action)
         reward = torch_and_pad(reward)
+        state = torch_and_pad(state)
         next_state = torch_and_pad(next_state)
         done = torch.tensor([int(done)])
         self.memory[self.position] = Transition(state, action, reward, next_state, done)

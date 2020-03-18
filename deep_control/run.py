@@ -85,7 +85,7 @@ def load_env(env_id, algo_type):
         env = utils.FlattenRoboticsDictWrapper(gym.make(env_id))
     elif env_id == 'HandManipulateEggRotate-v0':
         agent = algo_switch('HandManipulateEggRotate', algo_type)
-        env = utils.FlattenRoboticsDictWrapper(gym.make(env_id))
+        env = gym.make(env_id)
     elif env_id == 'HandManipulateEggFull-v0':
         agent = algo_switch('HandManipulateEggFull', algo_type)
         env = utils.FlattenRoboticsDictWrapper(gym.make(env_id))
