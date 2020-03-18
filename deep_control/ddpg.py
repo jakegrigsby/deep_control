@@ -58,6 +58,7 @@ def _array_based_ddpg(agent, target_agent, random_process, buffer, actor_optimiz
 
     for episode in range(args.num_episodes):
         rollout = utils.collect_rollout(agent, random_process, eps, env, args)
+        eps = max(args.eps_final, eps - (args.eps_start - args.eps_final)/args.eps_anneal)
 
         for (state, action, rew, next_state, done, info) in rollout:
             buffer.push(state, action, rew, next_state, done)
@@ -70,7 +71,6 @@ def _array_based_ddpg(agent, target_agent, random_process, buffer, actor_optimiz
             # move target model towards training model
             utils.soft_update(target_agent.actor, agent.actor, args.tau)
             utils.soft_update(target_agent.critic, agent.critic, args.tau)
-            eps = max(args.eps_final, eps - (args.eps_start - args.eps_final)/args.eps_anneal)
         
         if episode % args.eval_interval == 0:
             mean_return = utils.evaluate_agent(agent, env, args)
@@ -100,6 +100,7 @@ def _dict_based_ddpg(agent, target_agent, random_process, buffer, actor_optimize
 
     for episode in range(args.num_episodes):
         rollout = utils.collect_rollout(agent, random_process, eps, env, args)
+        eps = max(args.eps_final, eps - (args.eps_start - args.eps_final)/args.eps_anneal)
 
         # add rollout to buffer
         substitute_goal = rollout[-1][3]['achieved_goal'] # last state reached on the rollout
@@ -120,7 +121,6 @@ def _dict_based_ddpg(agent, target_agent, random_process, buffer, actor_optimize
             # move target model towards training model
             utils.soft_update(target_agent.actor, agent.actor, args.tau)
             utils.soft_update(target_agent.critic, agent.critic, args.tau)
-            eps = max(args.eps_final, eps - (args.eps_start - args.eps_final)/args.eps_anneal)
         
         if episode % args.eval_interval == 0:
             mean_return = utils.evaluate_agent(agent, env, args)
@@ -189,7 +189,7 @@ def parse_args():
                         help='gamma, the discount factor')
     parser.add_argument('--eps_start', type=float, default=1.)
     parser.add_argument('--eps_final', type=float, default=1e-3)
-    parser.add_argument('--eps_anneal', type=float, default=1e6)
+    parser.add_argument('--eps_anneal', type=float, default=10000, help='How many **episodes** to anneal eps over.')
     parser.add_argument('--theta', type=float, default=.15,
         help='theta for Ornstein Uhlenbeck process computation')
     parser.add_argument('--sigma', type=float, default=.2,
