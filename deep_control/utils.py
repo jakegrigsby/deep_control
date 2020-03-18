@@ -44,6 +44,7 @@ def evaluate_agent(agent, env, args):
     return mean_return
 
 def collect_rollout(agent, random_process, eps, env, args):
+    agent.eval()
     # collect new experience
     state = env.reset()
     random_process.reset_states()
