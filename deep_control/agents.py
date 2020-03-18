@@ -3,8 +3,8 @@ import os
 import numpy as np
 import torch
 
-import nets
-import utils
+from . import nets
+from . import utils
 
 class NAFAgent:
     def to(self, device):
@@ -248,7 +248,7 @@ HandManipulateEggFullNAFAgent = HandManipulateBlockNAFAgent
 
 HandManipulatePenNAFAgent = HandManipulateBlockNAFAgent
 HandManipulatePenRotateNAFAgent = HandManipulateBlockNAFAgent
-HandManipulatePenFullNAFAgnet = HandManipulateBlockNAFAgent
+HandManipulatePenFullNAFAgent = HandManipulateBlockNAFAgent
 
 
 class HandReachDDPGAgent(DictBasedDDPGAgent):
@@ -272,7 +272,7 @@ HandManipulateEggFullDDPGAgent = HandManipulateBlockDDPGAgent
 
 HandManipulatePenDDPGAgent = HandManipulateBlockDDPGAgent
 HandManipulatePenRotateDDPGAgent = HandManipulateBlockDDPGAgent
-HandManipulatePenFullDDPGAgnet = HandManipulateBlockDDPGAgent
+HandManipulatePenFullDDPGAgent = HandManipulateBlockDDPGAgent
 
 
 

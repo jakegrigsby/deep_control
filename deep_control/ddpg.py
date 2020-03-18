@@ -6,15 +6,15 @@ import torch.nn.functional as F
 import numpy as np
 import gym
 
-import utils
-import run
+from . import utils
+from . import run
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def ddpg(agent, env, args):
     """
-    Train `agent` on `env` with the Deep Deterministic Policy Gradient Algorithm.
+    Train `agent` on `env` with the Deep Deterministic Policy Gradient algorithm.
 
     Reference: https://arxiv.org/abs/1509.02971
     """
@@ -29,8 +29,8 @@ def ddpg(agent, env, args):
     random_process = utils.OrnsteinUhlenbeckProcess(size=env.action_space.shape, sigma=args.sigma, theta=args.theta)
 
     buffer = utils.ReplayBuffer(args.buffer_size)
-    critic_optimizer = torch.optim.Adam(agent.critic.parameters(), lr=args.critic_lr)
-    actor_optimizer = torch.optim.Adam(agent.actor.parameters(), lr=args.actor_lr)
+    critic_optimizer = torch.optim.Adam(agent.critic.parameters(), lr=args.critic_lr, weight_decay=args.critic_l2)
+    actor_optimizer = torch.optim.Adam(agent.actor.parameters(), lr=args.actor_lr, weight_decay=args.actor_l2)
 
     save_dir = utils.make_process_dirs(args.name)
 
@@ -207,6 +207,8 @@ def parse_args():
     parser.add_argument('--name', type=str, default='ddpg_run')
     parser.add_argument('--her', action='store_true')
     parser.add_argument('--opt_steps', type=int, default=50)
+    parser.add_argument('--actor_l2', type=float, default=0.)
+    parser.add_argument('--critic_l2', type=float, default=1e-4)
     return parser.parse_args()
 
 

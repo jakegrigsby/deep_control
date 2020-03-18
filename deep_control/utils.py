@@ -7,7 +7,7 @@ import torchvision
 import torch
 import gym
 
-import run
+from . import run
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

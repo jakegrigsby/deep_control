@@ -2,8 +2,9 @@ import argparse
 
 import gym
 import torch
-import utils
-import agents
+
+from . import utils
+from . import agents
 
 def run(agent, env, episodes, max_steps, render=False, verbosity=1):
     episode_return_history = []
@@ -25,23 +26,23 @@ def run(agent, env, episodes, max_steps, render=False, verbosity=1):
 def load_env(env_id, algo_type):
     if env_id == 'Pendulum-v0':
         agent = algo_switch('Pendulum', algo_type)
-    elif env_id == 'MountaincarContinuous-v0':
+    elif env_id == 'MountainCarContinuous-v0':
         agent = algo_switch('Mountaincar', algo_type)
-    elif env_id == 'Ant-v2':
+    elif env_id == 'Ant-v3':
         agent = algo_switch('Ant', algo_type)
-    elif env_id == 'Walker2d-v2':
+    elif env_id == 'Walker2d-v3':
         agent = algo_switch('Walker', algo_type)
-    elif env_id == 'Swimmer-v2':
+    elif env_id == 'Swimmer-v3':
         agent = algo_switch('Swimmer', algo_type)
     elif env_id == 'Reacher-v2':
         agent = algo_switch('Reacher', algo_type)
-    elif env_id == 'Hopper-v2':
+    elif env_id == 'Hopper-v3':
         agent = algo_switch('Hopper', algo_type)
     elif env_id == 'Humanoid-v2':
         agent = algo_switch('Humanoid', algo_type)
     elif env_id == 'HumanoidStandup-v2':
         agent = algo_switch('HumanoidStandup', algo_type)
-    elif env_id == 'HalfCheetah-v2':
+    elif env_id == 'HalfCheetah-v3':
         agent = algo_switch('Cheetah', algo_type)
     elif env_id == 'FetchPush-v1':
         agent = algo_switch('FetchPush', algo_type)

@@ -8,12 +8,17 @@ import numpy as np
 import tqdm
 import tensorboardX
 
-import utils
-import run
+from . import utils
+from . import run
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def naf(agent, env, args):
+    """
+    Train `agent` on `env` with the Normalized Advantage Function algorithm.
+
+    Reference: https://arxiv.org/abs/1603.00748
+    """
     agent.to(device)
 
     # initialize target networks
@@ -36,6 +41,10 @@ def naf(agent, env, args):
 
 
 def _array_based_naf(agent, target_agent, random_process, buffer, optimizer, save_dir, env, args):
+    """
+    NAF for standard gym environments where the state is a flat numpy array. This distinction is only 
+    made to handle the Dictionary state spaces that are used by robotics tasks.
+    """
     eps = args.eps_start
     # use warmp up steps to add random transitions to the buffer
     state = env.reset()
@@ -71,6 +80,10 @@ def _array_based_naf(agent, target_agent, random_process, buffer, optimizer, sav
 
 
 def _dict_based_naf(agent, target_agent, random_process, buffer, optimizer, save_dir, env, args):
+    """
+    NAF specifically modified to deal with the Dictionary state spaces used by the robotics environments in this paper:
+    https://arxiv.org/abs/1802.09464
+    """
     eps = args.eps_start
     # use warmp up steps to add random transitions to the buffer
     state = env.reset()
@@ -157,7 +170,6 @@ def parse_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--name', type=str, default='naf_run', help='base name of save dir (a unique number will be added)')
     parser.add_argument('--env', type=str, default='brightpoint3x3', help='training environment')
-    parser.add_argument('--actor_arch', default='standard', help='Architecture of Actor Network')
     parser.add_argument('--num_episodes', type=int, default=1000,
                         help='number of episodes for training')
     parser.add_argument('--max_episode_steps', type=int, default=150,
@@ -186,13 +198,9 @@ def parse_args():
     parser.add_argument('--warmup_steps', type=int, default=1000,
         help='warmup length, in steps')
     parser.add_argument('--render', action='store_true')
-    parser.add_argument('--log_interval', type=int, default=10,
-        help='How often to log training metrics like actor loss and critic loss (in steps)')
+    parser.add_argument('--log_interval', type=int, default=10)
     parser.add_argument('--l2', type=float, default=.0)
-    parser.add_argument('--save_interval', type=int, default=1000,
-        help='How often (in episodes) to save the actor and critic models to disk')
-    parser.add_argument('--metric', type=str, default='l2')
-    parser.add_argument('--target_class', type=int, default=None)
+    parser.add_argument('--save_interval', type=int, default=1000)
     parser.add_argument('--clip', type=float, default=100.)
     parser.add_argument('--her', action='store_true')
     parser.add_argument('--opt_steps', type=int, default=50)
