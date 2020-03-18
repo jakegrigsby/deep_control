@@ -27,8 +27,10 @@ class NAFAgent:
     def load(self, path):
         save_path = os.path.join(path, 'naf_net.pt')
         self.network.load_state_dict(torch.load(save_path, map_location=utils.device))
+
     def forward(self, state):
         state = self.process_state(state)
+        self.network.eval()
         with torch.no_grad():
             mu, _, _ = self.network(state)
         return np.squeeze(mu.cpu().numpy(), 0)
@@ -198,7 +200,6 @@ class DictBasedDDPGAgent(DDPGAgent):
         return super().process_state(state_goal)
 
 ##############################################
-# all v1s
 
 class FetchPushNAFAgent(DictBasedNAFAgent):
     def __init__(self):
@@ -227,7 +228,6 @@ FetchPickAndPlaceDDPGAgent = FetchPushDDPGAgent
 
 ##############################################
 
-# all v0s
 
 class HandReachNAFAgent(DictBasedNAFAgent):
     def __init__(self):
