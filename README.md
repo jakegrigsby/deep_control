@@ -5,7 +5,7 @@
 
 **Deep Control** is a pytorch implementation of deep reinforcement learning solutions to benchmark continuous control tasks.
 
-So far, vanilla versions of [Deep Deterministic Policy Gradient](https://arxiv.org/abs/509.0297) and [Normalized Advantage Functions](https://arxiv.org/abs/603.00748) are included - both with a simplified version of [Hindsight Experience Replay](http://papers.nips.cc/paper/7090-hindsight-experience-replay).
+So far, vanilla versions of [Deep Deterministic Policy Gradient](https://arxiv.org/pdf/1509.02971.pdf) and [Normalized Advantage Functions](https://arxiv.org/pdf/1603.00748.pdf) are included - both with a simplified version of [Hindsight Experience Replay](http://papers.nips.cc/paper/7090-hindsight-experience-replay).
 
 Supported Environments:
 - `Pendulum-v0`
@@ -65,8 +65,8 @@ pytest tests
 ![Robot Arms](misc/robo_arms.jpeg)
 
 ### References
-1) https://arxiv.org/abs/509.0297
-2) https://arxiv.org/abs/603.00748
+1) https://arxiv.org/pdf/1509.02971.pdf
+2) https://arxiv.org/pdf/1603.00748.pdf`
 3) http://papers.nips.cc/paper/7090-hindsight-experience-replay
 4) https://github.com/ikostrikov/pytorch-ddpg-naf
 5) https://github.com/keras-rl/keras-rl
