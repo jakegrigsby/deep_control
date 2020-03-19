@@ -1,34 +1,72 @@
-# MLC @ UVA DDPG Baseline
+# Deep Control
+## Deep Reinforcement Learning for Continuous Control
 
-![MLC Logo](misc/mlc_logo.png)
+![mujoco](misc/humanoid.gif)
 
-**A Pytorch implementation of Deep Determinisitc Policy Gradient for simple continuous control tasks.**
+**Deep Control** is a pytorch implementation of deep reinforcement learning solutions to benchmark continuous control tasks.
 
-More info:
-[Continuous control with deep reinforcement learning](https://arxiv.org/pdf/1509.02971.pdf)
+So far, vanilla versions of [Deep Deterministic Policy Gradient](https://arxiv.org/abs/509.0297) and [Normalized Advantage Functions](https://arxiv.org/abs/603.00748) are included - both with a simplified version of [Hindsight Experience Replay](http://papers.nips.cc/paper/7090-hindsight-experience-replay).
 
+Supported Environments:
+- `Pendulum-v0`
+- `MountainCarContinuous-v0`
+- `Ant-v3`
+- `Walker2d-v3`
+- `Swimmer-v3`
+- `Reacher-v2`
+- `Hopper-v3`
+- `Humanoid-v2`
+- `HumanoidStandup-v2`
+- `HalfCheetah-v3`
+- `FetchPush-v1`
+- `FetchReach-v1`
+- `FetchSlide-v1`
+- `FetchPickAndPlace-v1`
+- `HandReach-v0`
+- `HandManipulateBlockRotate-v0`
+- `HandManipulateBlockRotateParall-v0`
+- `HandManipulateBlockRotateXYZ-v0`
+- `HandManipulateBlockFull-v0`
+- `HandManipulateEgg-v0`
+- `HandManipulateEggRotate-v0`
+- `HandManipulateEggFull-v0`
+- `HandManipulatePen-v0`
+- `HandManipulatePenRotate-v0`
+- `HandManipulatePenFull-v0`
 
-### Pretrained Agents
-Watching a pretrained agent on `Pendulum-v0`:
+### Installation
 ```bash
-python run.py --env Pendulum-v0 --agent saves/pretrained_pendulum --episodes 10
+git clone https://github.com/jakegrigsby/deep_control.git
+cd deep_control
+pip install -e .
 ```
 
-or on `MountainCarContinuous-v0`:
+### Training
+There are two main training scripts, `ddpg.py` and `naf.py`, which train a randomly initialized agent.
+
 ```bash
-python run.py --env MountainCarContinuous-v0 --agent saves/pretrained_mountaincar --episodes 10
+python -m deep_control.ddpg --env Ant-v3 --num_episodes 2000 --name my_ant_ddpg
+```
+In this case, the trained weights will be saved to `./saves/my_ant_ddpg_0`. The number on the end is automatically incremented to get a unique directory for each run.
+
+The naf script is trained similarly, with `deep_control.naf` module. A complete list of command line arguments can be found at the bottom of each training script.
+
+### Running a Pretrained Agent
+```bash
+python -m deep_control.run --agent saves/my_ant_ddpg --env Ant-v3 --render --episodes 100
 ```
 
-![Pendulum GIF](misc/pendulum.gif)
-![Mountaincar GIF](misc/mountaincar.gif)
-
-### Train Agents
+### Run Tests
+Install [pytest](https://docs.pytest.org/en/latest/)
 ```bash
-python ddpg.py
+pytest tests
 ```
 
-There are a ton of CL flags. See the bottom of `ddpg.py` for a full list, but here are the important ones:
-* `--env` is the gym environment id. Options are MountainCarContinuous-v0 and Pendulum-v0
-* `--num_episodes` is how many episodes of experience to collect during training. Defaults to 500.
-* `--batch_size` is how many sample transitions are passed through the networks at once during training. Defaults to 128. This may need to be reduced when running on CPUs.
-* `--render` is either `1` or `0`. `1` lets you watch the agent as it learns. This slows the process down.
+![Robot Arms](misc/robo_arms.jpeg)
+
+### References
+1) https://arxiv.org/abs/509.0297
+2) https://arxiv.org/abs/603.00748
+3) http://papers.nips.cc/paper/7090-hindsight-experience-replay
+4) https://github.com/ikostrikov/pytorch-ddpg-naf
+5) https://github.com/keras-rl/keras-rl
