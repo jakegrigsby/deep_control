@@ -12,9 +12,9 @@ def make_test_ddpg_args(her=False):
     args.actor_lr = 1e-4
     args.critic_lr = 1e-3
     args.gamma = .99
-    args.eps_start = 1.
-    args.eps_final = 1e-3
-    args.eps_anneal = 10
+    args.sigma_start = .2
+    args.sigma_final = 1e-3
+    args.sigma_anneal = 10
     args.theta = .15
     args.sigma = .2
     args.buffer_size = 1000
@@ -77,41 +77,41 @@ def test_half_cheetah_ddpg():
 
 def test_fetch_push_ddpg():
     agent, env = load_env('FetchPush-v1', 'ddpg')
-    deep_control.ddpg(agent, env, make_test_ddpg_args())
+    deep_control.ddpg(agent, env, make_test_ddpg_args(her=True))
 
 
 def test_fetch_reach_ddpg():
     agent, env = load_env('FetchReach-v1', 'ddpg')
-    deep_control.ddpg(agent, env, make_test_ddpg_args())
+    deep_control.ddpg(agent, env, make_test_ddpg_args(her=True))
 
 
 def test_fetch_slide_ddpg():
     agent, env = load_env('FetchSlide-v1', 'ddpg')
-    deep_control.ddpg(agent, env, make_test_ddpg_args())
+    deep_control.ddpg(agent, env, make_test_ddpg_args(her=True))
 
 
 def test_fetch_pick_place_ddpg():
     agent, env = load_env('FetchPickAndPlace-v1', 'ddpg')
-    deep_control.ddpg(agent, env, make_test_ddpg_args())
+    deep_control.ddpg(agent, env, make_test_ddpg_args(her=True))
 
 
 def test_hand_reach_ddpg():
     agent, env = load_env('HandReach-v0', 'ddpg')
-    deep_control.ddpg(agent, env, make_test_ddpg_args())
+    deep_control.ddpg(agent, env, make_test_ddpg_args(her=True))
 
 def test_manipulate_block_ddpg():
     agent, env = load_env('HandManipulateBlockFull-v0', 'ddpg')
-    deep_control.ddpg(agent, env, make_test_ddpg_args())
+    deep_control.ddpg(agent, env, make_test_ddpg_args(her=True))
 
 
 def test_manipulate_egg_ddpg():
     agent, env = load_env('HandManipulateEggFull-v0', 'ddpg')
-    deep_control.ddpg(agent, env, make_test_ddpg_args())
+    deep_control.ddpg(agent, env, make_test_ddpg_args(her=True))
 
 
 def test_manipulate_pen_ddpg():
     agent, env = load_env('HandManipulatePenFull-v0', 'ddpg')
-    deep_control.ddpg(agent, env, make_test_ddpg_args())
+    deep_control.ddpg(agent, env, make_test_ddpg_args(her=True))
 
 
 

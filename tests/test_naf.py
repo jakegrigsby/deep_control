@@ -11,9 +11,9 @@ def make_test_naf_args(her=False):
     args.tau = .999
     args.lr = 1e-4
     args.gamma = .99
-    args.eps_start = 1.
-    args.eps_final = 1e-3
-    args.eps_anneal = 10
+    args.sigma_start = .2
+    args.sigma_final = .1
+    args.sigma_anneal = 10
     args.theta = .15
     args.sigma = .2
     args.buffer_size = 1000
@@ -76,41 +76,41 @@ def test_half_cheetah_naf():
 
 def test_fetch_push_naf():
     agent, env = load_env('FetchPush-v1', 'naf')
-    deep_control.naf(agent, env, make_test_naf_args())
+    deep_control.naf(agent, env, make_test_naf_args(her=True))
 
 
 def test_fetch_reach_naf():
     agent, env = load_env('FetchReach-v1', 'naf')
-    deep_control.naf(agent, env, make_test_naf_args())
+    deep_control.naf(agent, env, make_test_naf_args(her=True))
 
 
 def test_fetch_slide_naf():
     agent, env = load_env('FetchSlide-v1', 'naf')
-    deep_control.naf(agent, env, make_test_naf_args())
+    deep_control.naf(agent, env, make_test_naf_args(her=True))
 
 
 def test_fetch_pick_place_naf():
     agent, env = load_env('FetchPickAndPlace-v1', 'naf')
-    deep_control.naf(agent, env, make_test_naf_args())
+    deep_control.naf(agent, env, make_test_naf_args(her=True))
 
 
 def test_hand_reach_naf():
     agent, env = load_env('HandReach-v0', 'naf')
-    deep_control.naf(agent, env, make_test_naf_args())
+    deep_control.naf(agent, env, make_test_naf_args(her=True))
 
 def test_manipulate_block_naf():
     agent, env = load_env('HandManipulateBlockFull-v0', 'naf')
-    deep_control.naf(agent, env, make_test_naf_args())
+    deep_control.naf(agent, env, make_test_naf_args(her=True))
 
 
 def test_manipulate_egg_naf():
     agent, env = load_env('HandManipulateEggFull-v0', 'naf')
-    deep_control.naf(agent, env, make_test_naf_args())
+    deep_control.naf(agent, env, make_test_naf_args(her=True))
 
 
 def test_manipulate_pen_naf():
     agent, env = load_env('HandManipulatePenFull-v0', 'naf')
-    deep_control.naf(agent, env, make_test_naf_args())
+    deep_control.naf(agent, env, make_test_naf_args(her=True))
 
 
 

@@ -26,7 +26,7 @@ def naf(agent, env, args):
     target_agent.to(device)
     utils.hard_update(target_agent.network, agent.network)
 
-    random_process = utils.OrnsteinUhlenbeckProcess(size=env.action_space.shape, sigma=args.sigma, theta=args.theta)
+    random_process = utils.OrnsteinUhlenbeckProcess(size=env.action_space.shape, sigma=args.sigma_start, sigma_min=args.sigma_final, n_steps_annealing=args.sigma_anneal, theta=args.theta)
 
     buffer = utils.ReplayBuffer(args.buffer_size)
     optimizer = torch.optim.Adam(agent.network.parameters(), lr=args.lr, weight_decay=args.l2)
@@ -45,7 +45,6 @@ def _array_based_naf(agent, target_agent, random_process, buffer, optimizer, sav
     NAF for standard gym environments where the state is a flat numpy array. This distinction is only 
     made to handle the Dictionary state spaces that are used by robotics tasks.
     """
-    eps = args.eps_start
     # use warmp up steps to add random transitions to the buffer
     state = env.reset()
     done = False
@@ -57,8 +56,7 @@ def _array_based_naf(agent, target_agent, random_process, buffer, optimizer, sav
         state = next_state
 
     for episode in range(args.num_episodes):
-        rollout = utils.collect_rollout(agent, random_process, eps, env, args)
-        eps = max(args.eps_final, eps - (args.eps_start - args.eps_final)/args.eps_anneal)
+        rollout = utils.collect_rollout(agent, random_process, env, args)
 
         for (state, action, rew, next_state, done, info) in rollout:
             buffer.push(state, action, rew, next_state, done)
@@ -84,7 +82,6 @@ def _dict_based_naf(agent, target_agent, random_process, buffer, optimizer, save
     NAF specifically modified to deal with the Dictionary state spaces used by the robotics environments in this paper:
     https://arxiv.org/abs/1802.09464
     """
-    eps = args.eps_start
     # use warmp up steps to add random transitions to the buffer
     state = env.reset()
     done = False
@@ -98,8 +95,7 @@ def _dict_based_naf(agent, target_agent, random_process, buffer, optimizer, save
         state = next_state
 
     for episode in range(args.num_episodes):
-        rollout = utils.collect_rollout(agent, random_process, eps, env, args)
-        eps = max(args.eps_final, eps - (args.eps_start - args.eps_final)/args.eps_anneal)
+        rollout = utils.collect_rollout(agent, random_process, env, args)
 
         # add rollout to buffer
         substitute_goal = rollout[-1][3]['achieved_goal'] # last state reached on the rollout
@@ -182,12 +178,11 @@ def parse_args():
                         help='network learning rate')
     parser.add_argument('--gamma', type=float, default=.99,
                         help='gamma, the discount factor')
-    parser.add_argument('--eps_start', type=float, default=1.)
-    parser.add_argument('--eps_final', type=float, default=.5)
-    parser.add_argument('--eps_anneal', type=float, default=10000, help='How many **episodes** to anneal eps over.')
+    parser.add_argument('--sigma_final', type=float, default=.2)
+    parser.add_argument('--sigma_anneal', type=float, default=10000, help='How many steps to anneal sigma over.')
     parser.add_argument('--theta', type=float, default=.15,
         help='theta for Ornstein Uhlenbeck process computation')
-    parser.add_argument('--sigma', type=float, default=.2,
+    parser.add_argument('--sigma_start', type=float, default=.2,
         help='sigma for Ornstein Uhlenbeck process computation')
     parser.add_argument('--buffer_size', type=int, default=10**6,
         help='replay buffer size')

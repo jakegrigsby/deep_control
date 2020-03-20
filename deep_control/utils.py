@@ -43,7 +43,7 @@ def evaluate_agent(agent, env, args):
     mean_return = returns.mean()
     return mean_return
 
-def collect_rollout(agent, random_process, eps, env, args):
+def collect_rollout(agent, random_process, env, args):
     # collect new experience
     state = env.reset()
     random_process.reset_states()
@@ -52,7 +52,7 @@ def collect_rollout(agent, random_process, eps, env, args):
     for step in range(args.max_episode_steps):
         if done: break
         action = agent.forward(state)
-        noisy_action = exploration_noise(action, random_process, eps)
+        noisy_action = exploration_noise(action, random_process)
         next_state, reward, done, info = env.step(noisy_action)
         if args.render: env.render()
         rollout.append((state, noisy_action, reward, next_state, done, info))
@@ -102,8 +102,8 @@ def make_process_dirs(run_name, base_path='saves'):
     os.makedirs(base_dir)
     return base_dir
 
-def exploration_noise(action, random_process, eps):
-    return action + eps*random_process.sample().astype(np.float32)
+def exploration_noise(action, random_process):
+    return action + random_process.sample().astype(np.float32)
 
 """
 Credit for update functions:
