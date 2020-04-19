@@ -39,7 +39,7 @@ class NAFAgent:
         return torch.from_numpy(np.expand_dims(state, 0).astype(np.float32))
 
 
-class DDPGAgent():
+class DDPGAgent:
     def to(self, device):
         self.actor = self.actor.to(device)
         self.critic = self.critic.to(device)
@@ -75,6 +75,48 @@ class DDPGAgent():
     def process_state(self, state):
         return torch.from_numpy(np.expand_dims(state, 0).astype(np.float32))
 
+class TD3Agent:
+    def to(self, device):
+        self.actor = self.actor.to(device)
+        self.critic1 = self.critic1.to(device)
+        self.critic2 = self.critic2.to(device)
+    
+    def eval(self):
+        self.actor.eval()
+        self.critic1.eval()
+        self.critic2.eval()
+    
+    def train(self):
+        self.actor.train()
+        self.critic1.train()
+        self.critic2.train()
+    
+    def save(self, path):
+        actor_path = os.path.join(path, 'actor.pt')
+        critic1_path = os.path.join(path, 'critic1.pt')
+        critic2_path = os.path.join(path, 'critic2.pt')
+        torch.save(self.actor.state_dict(), actor_path)
+        torch.save(self.critic1.state_dict(), critic1_path)
+        torch.save(self.critic2.state_dict(), critic2_path)
+    
+    def load(self, path):
+        actor_path = os.path.join(path, 'actor.pt')
+        critic1_path = os.path.join(path, 'critic1.pt')
+        critic2_path = os.path.join(path, 'critic2.pt')
+        self.actor.load_state_dict(torch.load(actor_path))
+        self.critic1.load_state_dict(torch.load(critic1_path))
+        self.critic2.load_state_dict(torch.load(critic2_path))
+
+    def forward(self, state):
+        # first need to add batch dimension and convert to torch tensors
+        state = self.process_state(state)
+        self.actor.eval()
+        with torch.no_grad():
+            action = self.actor(state)
+        return np.squeeze(action.cpu().numpy(), 0)
+
+    def process_state(self, state):
+        return torch.from_numpy(np.expand_dims(state, 0).astype(np.float32))
 
 #############################################
 
@@ -83,6 +125,13 @@ class PendulumDDPGAgent(DDPGAgent):
         super().__init__()
         self.actor = nets.BaselineActor(3, 1)
         self.critic = nets.BaselineCritic(3, 1)
+
+class PendulumTD3Agent(TD3Agent):
+    def __init__(self):
+        super().__init__()
+        self.actor = nets.BaselineActor(3, 1)
+        self.critic1 = nets.BaselineCritic(3, 1)
+        self.critic2 = nets.BaselineCritic(3, 1)
 
 class PendulumNAFAgent(NAFAgent):
     def __init__(self):
@@ -100,6 +149,13 @@ class MountaincarDDPGAgent(DDPGAgent):
         self.actor = nets.BaselineActor(2, 1)
         self.critic = nets.BaselineCritic(2, 1)
 
+class MountaincarTD3Agent(TD3Agent):
+    def __init__(self):
+        super().__init__()
+        self.actor = nets.BaselineActor(2, 1)
+        self.critic1 = nets.BaselineCritic(2, 1)
+        self.critic2 = nets.BaselineCritic(2, 1)
+
 #############################################
 
 class AntNAFAgent(NAFAgent):
@@ -111,6 +167,13 @@ class AntDDPGAgent(DDPGAgent):
         super().__init__()
         self.actor = nets.BaselineActor(111, 8)
         self.critic = nets.BaselineCritic(111, 8)
+
+class AntTD3Agent(TD3Agent):
+    def __init__(self):
+        super().__init__()
+        self.actor = nets.BaselineActor(111, 8)
+        self.critic1 = nets.BaselineCritic(111, 8)
+        self.critic2 = nets.BaselineCritic(111, 8)
 
 #############################################
 
@@ -124,6 +187,13 @@ class WalkerDDPGAgent(DDPGAgent):
         self.actor = nets.BaselineActor(17, 6)
         self.critic = nets.BaselineCritic(17, 6)
 
+class WalkerTD3Agent(TD3Agent):
+    def __init__(self):
+        super().__init__()
+        self.actor = nets.BaselineActor(17, 6)
+        self.critic1 = nets.BaselineCritic(17, 6)
+        self.critic2 = nets.BaselineCritic(17, 6)
+
 #############################################
 
 class SwimmerNAFAgent(NAFAgent):
@@ -135,6 +205,13 @@ class SwimmerDDPGAgent(DDPGAgent):
         super().__init__()
         self.actor = nets.BaselineActor(8, 2)
         self.critic = nets.BaselineCritic(8, 2)
+
+class SwimmerTD3Agent(TD3Agent):
+    def __init__(self):
+        super().__init__()
+        self.actor = nets.BaselineActor(8, 2)
+        self.critic1 = nets.BaselineCritic(8, 2)
+        self.critic2 = nets.BaselineCritic(8, 2)
 
 #############################################
 
@@ -148,6 +225,13 @@ class CheetahDDPGAgent(DDPGAgent):
         self.actor = nets.BaselineActor(17, 6)
         self.critic = nets.BaselineCritic(17, 6)
 
+class CheetahTD3Agent(TD3Agent):
+    def __init__(self):
+        super().__init__()
+        self.actor = nets.BaselineActor(17, 6)
+        self.critic1 = nets.BaselineCritic(17, 6)
+        self.critic2 = nets.BaselineCritic(17, 6)
+
 #############################################
 
 class ReacherNAFAgent(NAFAgent):
@@ -160,6 +244,13 @@ class ReacherDDPGAgent(DDPGAgent):
         self.actor = nets.BaselineActor(11, 2)
         self.critic = nets.BaselineCritic(11, 2)
 
+class ReacherTD3Agent(TD3Agent):
+    def __init__(self):
+        super().__init__()
+        self.actor = nets.BaselineActor(11, 2)
+        self.critic1 = nets.BaselineCritic(11, 2)
+        self.critic2 = nets.BaselineCritic(11, 2)
+
 #############################################
 
 class HopperNAFAgent(NAFAgent):
@@ -171,6 +262,13 @@ class HopperDDPGAgent(DDPGAgent):
         super().__init__()
         self.actor = nets.BaselineActor(11, 3)
         self.critic = nets.BaselineCritic(11, 3)
+
+class HopperDDPGAgent(TD3Agent):
+    def __init__(self):
+        super().__init__()
+        self.actor = nets.BaselineActor(11, 3)
+        self.critic1 = nets.BaselineCritic(11, 3)
+        self.critic2 = nets.BaselineCritic(11, 3)
 
 #############################################
 
@@ -187,6 +285,15 @@ class HumanoidDDPGAgent(DDPGAgent):
         self.critic = nets.BaselineCritic(376, 17)
 
 HumanoidStandupDDPGAgent = HumanoidDDPGAgent
+
+class HumanoidTD3Agent(TD3Agent):
+    def __init__(self):
+        super().__init__()
+        self.actor = nets.BaselineActor(376, 17)
+        self.critic1 = nets.BaselineCritic(376, 17)
+        self.critic2 = nets.BaselineCritic(376, 17)
+
+HumanoidStandupTD3Agent = HumanoidTD3Agent
 ##############################################
 
 class DictBasedNAFAgent(NAFAgent):
@@ -195,6 +302,11 @@ class DictBasedNAFAgent(NAFAgent):
         return super().process_state(state_goal)
 
 class DictBasedDDPGAgent(DDPGAgent):
+    def process_state(self, state):
+        state_goal = np.concatenate((state['observation'], state['desired_goal']))
+        return super().process_state(state_goal)
+
+class DictBasedTD3Agent(TD3Agent):
     def process_state(self, state):
         state_goal = np.concatenate((state['observation'], state['desired_goal']))
         return super().process_state(state_goal)
@@ -225,6 +337,22 @@ class FetchReachDDPGAgent(DictBasedDDPGAgent):
 
 FetchSlideDDPGAgent = FetchPushDDPGAgent
 FetchPickAndPlaceDDPGAgent = FetchPushDDPGAgent
+
+
+class FetchPushTD3Agent(DictBasedTD3Agent):
+    def __init__(self):
+        self.actor = nets.BaselineActor(28, 4)
+        self.critic1 = nets.BaselineCritic(28, 4)
+        self.critic2 = nets.BaselineCritic(28, 4)
+
+class FetchReachTD3Agent(DictBasedTD3Agent):
+    def __init__(self):
+        self.actor = nets.BaselineActor(13, 4)
+        self.critic1 = nets.BaselineCritic(13, 4)
+        self.critic2 = nets.BaselineCritic(13, 4)
+
+FetchSlideTD3Agent = FetchPushTD3Agent
+FetchPickAndPlaceTD3Agent = FetchPushTD3Agent
 
 ##############################################
 
@@ -274,5 +402,30 @@ HandManipulatePenDDPGAgent = HandManipulateBlockDDPGAgent
 HandManipulatePenRotateDDPGAgent = HandManipulateBlockDDPGAgent
 HandManipulatePenFullDDPGAgent = HandManipulateBlockDDPGAgent
 
+
+class HandReachTD3Agent(DictBasedTD3Agent):
+    def __init__(self):
+        self.actor = nets.BaselineActor(63+15, 20)
+        self.critic1 = nets.BaselineCritic(63+15, 20)
+        self.critic2 = nets.BaselineCritic(63+15, 20)
+
+class HandManipulateBlockTD3Agent(DictBasedTD3Agent):
+    def __init__(self):
+        self.actor = nets.BaselineActor(61+7, 20)
+        self.critic1 = nets.BaselineCritic(61+7, 20)
+        self.critic2 = nets.BaselineCritic(61+7, 20)
+
+HandManipulateBlockRotateZTD3Agent = HandManipulateBlockTD3Agent
+HandManipulateBlockRotateParallelTD3Agent = HandManipulateBlockTD3Agent
+HandManipulateBlockRotateXYZTD3Agnet = HandManipulateBlockTD3Agent
+HandManipulateBlockFullTD3Agent = HandManipulateBlockTD3Agent
+
+HandManipulateEggTD3Agent = HandManipulateBlockTD3Agent
+HandManipulateEggRotateTD3Agent = HandManipulateBlockTD3Agent
+HandManipulateEggFullTD3Agent = HandManipulateBlockTD3Agent
+
+HandManipulatePenTD3Agent = HandManipulateBlockTD3Agent
+HandManipulatePenRotateTD3Agent = HandManipulateBlockTD3Agent
+HandManipulatePenFullTD3Agent = HandManipulateBlockTD3Agent
 
 

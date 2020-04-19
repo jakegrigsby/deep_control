@@ -85,8 +85,10 @@ def algo_switch(prefix, algo_type):
         return eval(f"agents.{prefix}DDPGAgent")()
     elif algo_type == 'naf':
         return eval(f"agents.{prefix}NAFAgent")()
+    elif algo_type == 'td3':
+        return eval(f"agents.{prefix}TD3Agent")()
     else:
-        raise ValueError(f"Unrecognized algorithm id: {algo_type}. 'ddpg' and 'naf' are currently supported.")
+        raise ValueError(f"Unrecognized algorithm id: {algo_type}. 'ddpg', 'td3', and 'naf' are currently supported.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
