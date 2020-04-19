@@ -159,3 +159,10 @@ class OrnsteinUhlenbeckProcess(AnnealedGaussianProcess):
     def reset_states(self):
         self.x_prev = self.x0 if self.x0 is not None else np.zeros(self.size)
  
+class GaussianExplorationNoise:
+    def __init__(self, size, scale=.1):
+        self.size = size
+        self.scale = scale
+
+    def sample(self):
+        return self.scale*torch.randn(*self.size)
