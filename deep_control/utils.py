@@ -39,7 +39,7 @@ def torch_and_pad(x):
 
 def evaluate_agent(agent, env, args):
     agent.eval()
-    returns = run.run(agent, env, args.eval_episodes, args.max_episode_steps, verbosity=0)
+    returns = run.run(agent, env, args.eval_episodes, args.max_episode_steps, args.render, verbosity=0)
     mean_return = returns.mean()
     return mean_return
 
@@ -159,3 +159,19 @@ class OrnsteinUhlenbeckProcess(AnnealedGaussianProcess):
     def reset_states(self):
         self.x_prev = self.x0 if self.x0 is not None else np.zeros(self.size)
  
+class GaussianExplorationNoise:
+    def __init__(self, size, start_scale=.1, final_scale=1., steps_annealed=1000):
+        assert start_scale >= final_scale
+        self.size = size
+        self.start_scale = start_scale
+        self.final_scale = final_scale
+        self.steps_annealed = steps_annealed
+        self._current_scale = start_scale
+        self._scale_slope = (start_scale - final_scale) / steps_annealed
+
+    def sample(self):
+        noise = self._current_scale*torch.randn(*self.size)
+        self._current_scale = max(self._current_scale - self._scale_slope, self.final_scale)
+        return noise
+
+

@@ -7,6 +7,9 @@ from . import nets
 from . import utils
 
 class NAFAgent:
+    def __init__(self, obs_space_size, act_space_size, max_action):
+        self.network = nets.BaselineNQF(obs_space_size, act_space_size, max_action)
+
     def to(self, device):
         self.network = self.network.to(device)
     
@@ -39,7 +42,11 @@ class NAFAgent:
         return torch.from_numpy(np.expand_dims(state, 0).astype(np.float32))
 
 
-class DDPGAgent():
+class DDPGAgent:
+    def __init__(self, obs_space_size, action_space_size, max_action):
+        self.actor = nets.BaselineActor(obs_space_size, action_space_size, max_action)
+        self.critic = nets.BaselineCritic(obs_space_size, action_space_size)
+
     def to(self, device):
         self.actor = self.actor.to(device)
         self.critic = self.critic.to(device)
@@ -75,204 +82,51 @@ class DDPGAgent():
     def process_state(self, state):
         return torch.from_numpy(np.expand_dims(state, 0).astype(np.float32))
 
+class TD3Agent:
+    def __init__(self, obs_space_size, act_space_size, max_action):
+        self.actor = nets.BaselineActor(obs_space_size, act_space_size, max_action)
+        self.critic1 = nets.BaselineCritic(obs_space_size, act_space_size)
+        self.critic2 = nets.BaselineCritic(obs_space_size, act_space_size)
 
-#############################################
+    def to(self, device):
+        self.actor = self.actor.to(device)
+        self.critic1 = self.critic1.to(device)
+        self.critic2 = self.critic2.to(device)
+    
+    def eval(self):
+        self.actor.eval()
+        self.critic1.eval()
+        self.critic2.eval()
+    
+    def train(self):
+        self.actor.train()
+        self.critic1.train()
+        self.critic2.train()
+    
+    def save(self, path):
+        actor_path = os.path.join(path, 'actor.pt')
+        critic1_path = os.path.join(path, 'critic1.pt')
+        critic2_path = os.path.join(path, 'critic2.pt')
+        torch.save(self.actor.state_dict(), actor_path)
+        torch.save(self.critic1.state_dict(), critic1_path)
+        torch.save(self.critic2.state_dict(), critic2_path)
+    
+    def load(self, path):
+        actor_path = os.path.join(path, 'actor.pt')
+        critic1_path = os.path.join(path, 'critic1.pt')
+        critic2_path = os.path.join(path, 'critic2.pt')
+        self.actor.load_state_dict(torch.load(actor_path))
+        self.critic1.load_state_dict(torch.load(critic1_path))
+        self.critic2.load_state_dict(torch.load(critic2_path))
 
-class PendulumDDPGAgent(DDPGAgent):
-    def __init__(self):
-        super().__init__()
-        self.actor = nets.BaselineActor(3, 1)
-        self.critic = nets.BaselineCritic(3, 1)
+    def forward(self, state):
+        # first need to add batch dimension and convert to torch tensors
+        state = self.process_state(state)
+        self.actor.eval()
+        with torch.no_grad():
+            action = self.actor(state)
+        return np.squeeze(action.cpu().numpy(), 0)
 
-class PendulumNAFAgent(NAFAgent):
-    def __init__(self):
-        self.network = nets.BaselineNQF(3, 1)
-        
-#############################################
-
-class MountaincarNAFAgent(NAFAgent):
-    def __init__(self):
-        self.network = nets.BaselineNQF(2, 1)
-
-class MountaincarDDPGAgent(DDPGAgent):
-    def __init__(self):
-        super().__init__()
-        self.actor = nets.BaselineActor(2, 1)
-        self.critic = nets.BaselineCritic(2, 1)
-
-#############################################
-
-class AntNAFAgent(NAFAgent):
-    def __init__(self):
-        self.network = nets.BaselineNQF(111, 8)
-
-class AntDDPGAgent(DDPGAgent):
-    def __init__(self):
-        super().__init__()
-        self.actor = nets.BaselineActor(111, 8)
-        self.critic = nets.BaselineCritic(111, 8)
-
-#############################################
-
-class WalkerNAFAgent(NAFAgent):
-    def __init__(self):
-        self.network = nets.BaselineNQF(17, 6)
-
-class WalkerDDPGAgent(DDPGAgent):
-    def __init__(self):
-        super().__init__()
-        self.actor = nets.BaselineActor(17, 6)
-        self.critic = nets.BaselineCritic(17, 6)
-
-#############################################
-
-class SwimmerNAFAgent(NAFAgent):
-    def __init__(self):
-        self.network = nets.BaselineNQF(8, 2)
-
-class SwimmerDDPGAgent(DDPGAgent):
-    def __init__(self):
-        super().__init__()
-        self.actor = nets.BaselineActor(8, 2)
-        self.critic = nets.BaselineCritic(8, 2)
-
-#############################################
-
-class CheetahNAFAgent(NAFAgent):
-    def __init__(self):
-        self.network = nets.BaselineNQF(17, 6)
-
-class CheetahDDPGAgent(DDPGAgent):
-    def __init__(self):
-        super().__init__()
-        self.actor = nets.BaselineActor(17, 6)
-        self.critic = nets.BaselineCritic(17, 6)
-
-#############################################
-
-class ReacherNAFAgent(NAFAgent):
-    def __init__(self):
-        self.network = nets.BaselineNQF(11, 2)
-
-class ReacherDDPGAgent(DDPGAgent):
-    def __init__(self):
-        super().__init__()
-        self.actor = nets.BaselineActor(11, 2)
-        self.critic = nets.BaselineCritic(11, 2)
-
-#############################################
-
-class HopperNAFAgent(NAFAgent):
-    def __init__(self):
-        self.network = nets.BaselineNQF(11, 3)
-
-class HopperDDPGAgent(DDPGAgent):
-    def __init__(self):
-        super().__init__()
-        self.actor = nets.BaselineActor(11, 3)
-        self.critic = nets.BaselineCritic(11, 3)
-
-#############################################
-
-class HumanoidNAFAgent(NAFAgent):
-    def __init__(self):
-        self.network = nets.BaselineNQF(376, 17)
-
-HumanoidStandupNAFAgent = HumanoidNAFAgent
-
-class HumanoidDDPGAgent(DDPGAgent):
-    def __init__(self):
-        super().__init__()
-        self.actor = nets.BaselineActor(376, 17)
-        self.critic = nets.BaselineCritic(376, 17)
-
-HumanoidStandupDDPGAgent = HumanoidDDPGAgent
-##############################################
-
-class DictBasedNAFAgent(NAFAgent):
     def process_state(self, state):
-        state_goal = np.concatenate((state['observation'], state['desired_goal']))
-        return super().process_state(state_goal)
-
-class DictBasedDDPGAgent(DDPGAgent):
-    def process_state(self, state):
-        state_goal = np.concatenate((state['observation'], state['desired_goal']))
-        return super().process_state(state_goal)
-
-##############################################
-
-class FetchPushNAFAgent(DictBasedNAFAgent):
-    def __init__(self):
-        self.network = nets.BaselineNQF(28, 4)
-
-class FetchReachNAFAgent(DictBasedNAFAgent):
-    def __init__(self):
-        self.network = nets.BaselineNQF(13, 4)
-
-FetchSlideNAFAgent = FetchPushNAFAgent
-FetchPickAndPlaceNAFAgent = FetchPushNAFAgent
-
-
-class FetchPushDDPGAgent(DictBasedDDPGAgent):
-    def __init__(self):
-        self.actor = nets.BaselineActor(28, 4)
-        self.critic = nets.BaselineCritic(28, 4)
-
-class FetchReachDDPGAgent(DictBasedDDPGAgent):
-    def __init__(self):
-        self.actor = nets.BaselineActor(13, 4)
-        self.critic = nets.BaselineCritic(13, 4)
-
-FetchSlideDDPGAgent = FetchPushDDPGAgent
-FetchPickAndPlaceDDPGAgent = FetchPushDDPGAgent
-
-##############################################
-
-
-class HandReachNAFAgent(DictBasedNAFAgent):
-    def __init__(self):
-        self.network = nets.BaselineNQF(63+15, 20)
-
-class HandManipulateBlockNAFAgent(DictBasedNAFAgent):
-    def __init__(self):
-        self.network = nets.BaselineNQF(61+7, 20)
-
-HandManipulateBlockRotateZNAFAgent = HandManipulateBlockNAFAgent
-HandManipulateBlockRotateParallelNAFAgent = HandManipulateBlockNAFAgent
-HandManipulateBlockRotateXYZNAFAgnet = HandManipulateBlockNAFAgent
-HandManipulateBlockFullNAFAgent = HandManipulateBlockNAFAgent
-
-HandManipulateEggNAFAgent = HandManipulateBlockNAFAgent
-HandManipulateEggRotateNAFAgent = HandManipulateBlockNAFAgent
-HandManipulateEggFullNAFAgent = HandManipulateBlockNAFAgent
-
-HandManipulatePenNAFAgent = HandManipulateBlockNAFAgent
-HandManipulatePenRotateNAFAgent = HandManipulateBlockNAFAgent
-HandManipulatePenFullNAFAgent = HandManipulateBlockNAFAgent
-
-
-class HandReachDDPGAgent(DictBasedDDPGAgent):
-    def __init__(self):
-        self.actor = nets.BaselineActor(63+15, 20)
-        self.critic = nets.BaselineCritic(63+15, 20)
-
-class HandManipulateBlockDDPGAgent(DictBasedDDPGAgent):
-    def __init__(self):
-        self.actor = nets.BaselineActor(61+7, 20)
-        self.critic = nets.BaselineCritic(61+7, 20)
-
-HandManipulateBlockRotateZDDPGAgent = HandManipulateBlockDDPGAgent
-HandManipulateBlockRotateParallelDDPGAgent = HandManipulateBlockDDPGAgent
-HandManipulateBlockRotateXYZDDPGAgnet = HandManipulateBlockDDPGAgent
-HandManipulateBlockFullDDPGAgent = HandManipulateBlockDDPGAgent
-
-HandManipulateEggDDPGAgent = HandManipulateBlockDDPGAgent
-HandManipulateEggRotateDDPGAgent = HandManipulateBlockDDPGAgent
-HandManipulateEggFullDDPGAgent = HandManipulateBlockDDPGAgent
-
-HandManipulatePenDDPGAgent = HandManipulateBlockDDPGAgent
-HandManipulatePenRotateDDPGAgent = HandManipulateBlockDDPGAgent
-HandManipulatePenFullDDPGAgent = HandManipulateBlockDDPGAgent
-
-
+        return torch.from_numpy(np.expand_dims(state, 0).astype(np.float32))
 

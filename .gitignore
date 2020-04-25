@@ -4,3 +4,7 @@ deep_control/saves/
 deep_control/__pycache__/
 
 __pycache__/
+
+.eggs/
+
+deep_control.egg-info/
