@@ -12,7 +12,7 @@ from . import run
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def naf(agent, train_env, args):
+def naf(agent, env, args):
     """
     Train `agent` on `env` with the Normalized Advantage Function algorithm.
 
@@ -24,9 +24,8 @@ def naf(agent, train_env, args):
     target_agent = copy.deepcopy(agent)
     target_agent.to(device)
     utils.hard_update(target_agent.network, agent.network)
-    test_env = copy.deepcopy(train_env)
 
-    random_process = utils.OrnsteinUhlenbeckProcess(size=train_env.action_space.shape, sigma=args.sigma_start, sigma_min=args.sigma_final, n_steps_annealing=args.sigma_anneal, theta=args.theta)
+    random_process = utils.OrnsteinUhlenbeckProcess(size=env.action_space.shape, sigma=args.sigma_start, sigma_min=args.sigma_final, n_steps_annealing=args.sigma_anneal, theta=args.theta)
 
     buffer = utils.ReplayBuffer(args.buffer_size)
     optimizer = torch.optim.Adam(agent.network.parameters(), lr=args.lr, weight_decay=args.l2)
@@ -38,19 +37,19 @@ def naf(agent, train_env, args):
     hparams_dict = utils.clean_hparams_dict(vars(args))
     writer.add_hparams(hparams_dict, {})
 
-    utils.warmup_buffer(buffer, train_env, args.warmup_steps, args.max_episode_steps)
+    utils.warmup_buffer(buffer, env, args.warmup_steps, args.max_episode_steps)
 
     done = True
     learning_curve = []
     for step in range(args.num_steps):
         if done: 
-            state = train_env.reset()
+            state = env.reset()
             random_process.reset_states()
             steps_this_ep = 0
             done = False
         action = agent.forward(state)
         noisy_action = utils.exploration_noise(action, random_process)
-        next_state, reward, done, info = train_env.step(noisy_action)
+        next_state, reward, done, info = env.step(noisy_action)
         buffer.push(state, noisy_action, reward, next_state, done)
         next_state = state
         steps_this_ep += 1
@@ -61,7 +60,7 @@ def naf(agent, train_env, args):
         utils.soft_update(target_agent.network, agent.network, args.tau)
         
         if step % args.eval_interval == 0:
-            mean_return = utils.evaluate_agent(agent, test_env, args)
+            mean_return = utils.evaluate_agent(agent, env, args)
             writer.add_scalar('return', mean_return, step)
             learning_curve.append((step, mean_return))
 
@@ -139,7 +138,7 @@ def parse_args():
         help='how often to test the agent without exploration (in steps)')
     parser.add_argument('--eval_episodes', type=int, default=1,
         help='how many episodes to run for when testing')
-    parser.add_argument('--warmup_steps', type=int, default=25000,
+    parser.add_argument('--warmup_steps', type=int, default=1000,
         help='warmup length, in steps')
     parser.add_argument('--render', action='store_true')
     parser.add_argument('--l2', type=float, default=.0)
