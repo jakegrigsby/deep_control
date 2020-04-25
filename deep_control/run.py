@@ -2,12 +2,15 @@ import argparse
 
 import gym
 import torch
+import pybullet_envs
+import pybullet
 
 from . import utils
 from . import agents
 
 def run(agent, env, episodes, max_steps, render=False, verbosity=1):
     episode_return_history = []
+    if render: env.render()
     for episode in range(episodes):
         episode_return = 0
         state = env.reset()
@@ -24,71 +27,17 @@ def run(agent, env, episodes, max_steps, render=False, verbosity=1):
     return torch.tensor(episode_return_history)
 
 def load_env(env_id, algo_type):
-    if env_id == 'Pendulum-v0':
-        agent = algo_switch('Pendulum', algo_type)
-    elif env_id == 'MountainCarContinuous-v0':
-        agent = algo_switch('Mountaincar', algo_type)
-    elif env_id == 'Ant-v3':
-        agent = algo_switch('Ant', algo_type)
-    elif env_id == 'Walker2d-v3':
-        agent = algo_switch('Walker', algo_type)
-    elif env_id == 'Swimmer-v3':
-        agent = algo_switch('Swimmer', algo_type)
-    elif env_id == 'Reacher-v2':
-        agent = algo_switch('Reacher', algo_type)
-    elif env_id == 'Hopper-v3':
-        agent = algo_switch('Hopper', algo_type)
-    elif env_id == 'Humanoid-v2':
-        agent = algo_switch('Humanoid', algo_type)
-    elif env_id == 'HumanoidStandup-v2':
-        agent = algo_switch('HumanoidStandup', algo_type)
-    elif env_id == 'HalfCheetah-v3':
-        agent = algo_switch('Cheetah', algo_type)
-    elif env_id == 'FetchPush-v1':
-        agent = algo_switch('FetchPush', algo_type)
-    elif env_id == 'FetchReach-v1':
-        agent = algo_switch('FetchReach', algo_type)
-    elif env_id == 'FetchSlide-v1':
-        agent = algo_switch('FetchSlide', algo_type)
-    elif env_id == 'FetchPickAndPlace-v1':
-        agent = algo_switch('FetchPickAndPlace', algo_type)
-    elif env_id == 'HandReach-v0':
-        agent = algo_switch('HandReach', algo_type)
-    elif env_id == 'HandManipulateBlockRotate-v0':
-        agent = algo_switch('HandManipulateBlockRotate', algo_type)
-    elif env_id == 'HandManipulateBlockRotateParallel-v0':
-        agent = algo_switch('HandManipulateBlockRotateParallel', algo_type)
-    elif env_id == 'HandManipulateBlockRotateXYZ-v0':
-        agent = algo_switch('HandManipulateBlockRotateXYZ', algo_type)
-    elif env_id == 'HandManipulateBlockFull-v0':
-        agent = algo_switch('HandManipulateBlockFull', algo_type)
-    elif env_id == 'HandManipulateEgg-v0':
-        agent = algo_switch('HandManipulateEgg', algo_type)
-    elif env_id == 'HandManipulateEggRotate-v0':
-        agent = algo_switch('HandManipulateEggRotate', algo_type)
-    elif env_id == 'HandManipulateEggFull-v0':
-        agent = algo_switch('HandManipulateEggFull', algo_type)
-    elif env_id == 'HandManipulatePen-v0':
-        agent = algo_switch('HandManipulatePen', algo_type)
-    elif env_id == 'HandManipulatePenRotate-v0':
-        agent = algo_switch('HandManipulatePenRotate', algo_type)
-    elif env_id == 'HandManipulatePenFull-v0':
-        agent = algo_switch('HandManipulatePenFull', algo_type)
-    else:
-        raise ValueError(f"'{env_id}' environment code not recognized.")
     env = gym.make(env_id)
+    shape = (env.observation_space.shape[0], env.action_space.shape[0])
+    max_action = env.action_space.high[0]
+    if algo_type == 'ddpg':
+        agent = agents.DDPGAgent(*shape, max_action)
+    elif algo_type == 'naf':
+        agent = agents.NAFAgent(*shape, max_action)
+    elif algo_type == 'td3':
+        agent = agents.TD3Agent(*shape, max_action)
     return agent, env
 
-
-def algo_switch(prefix, algo_type):
-    if algo_type == 'ddpg':
-        return eval(f"agents.{prefix}DDPGAgent")()
-    elif algo_type == 'naf':
-        return eval(f"agents.{prefix}NAFAgent")()
-    elif algo_type == 'td3':
-        return eval(f"agents.{prefix}TD3Agent")()
-    else:
-        raise ValueError(f"Unrecognized algorithm id: {algo_type}. 'ddpg', 'td3', and 'naf' are currently supported.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

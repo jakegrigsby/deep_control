@@ -13,7 +13,7 @@ from . import run
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def naf(agent, env, args):
+def naf(agent, train_env, args):
     """
     Train `agent` on `env` with the Normalized Advantage Function algorithm.
 
@@ -22,108 +22,48 @@ def naf(agent, env, args):
     agent.to(device)
 
     # initialize target networks
-    target_agent = type(agent)()
+    target_agent = copy.deepcopy(agent)
     target_agent.to(device)
     utils.hard_update(target_agent.network, agent.network)
 
-    random_process = utils.OrnsteinUhlenbeckProcess(size=env.action_space.shape, sigma=args.sigma_start, sigma_min=args.sigma_final, n_steps_annealing=args.sigma_anneal, theta=args.theta)
+    random_process = utils.OrnsteinUhlenbeckProcess(size=train_env.action_space.shape, sigma=args.sigma_start, sigma_min=args.sigma_final, n_steps_annealing=args.sigma_anneal, theta=args.theta)
 
     buffer = utils.ReplayBuffer(args.buffer_size)
     optimizer = torch.optim.Adam(agent.network.parameters(), lr=args.lr, weight_decay=args.l2)
 
     save_dir = utils.make_process_dirs(args.name)
+    test_env = copy.deepcopy(train_env)
 
-    sample_state = env.reset()
-    if isinstance(sample_state, dict):
-        return _dict_based_naf(agent, target_agent, random_process, buffer, optimizer, save_dir, env, args)
-    else:
-        return _array_based_naf(agent, target_agent, random_process, buffer, optimizer, save_dir, env, args)
-
-
-def _array_based_naf(agent, target_agent, random_process, buffer, optimizer, save_dir, env, args):
-    """
-    NAF for standard gym environments where the state is a flat numpy array. This distinction is only 
-    made to handle the Dictionary state spaces that are used by robotics tasks.
-    """
     # use warmp up steps to add random transitions to the buffer
-    state = env.reset()
+    state = train_env.reset()
     done = False
     for _ in range(args.warmup_steps):
-        if done: state = env.reset(); done = False
-        rand_action = env.action_space.sample()
-        next_state, reward, done, info = env.step(rand_action)
+        if done: state = train_env.reset(); done = False
+        rand_action = train_env.action_space.sample()
+        next_state, reward, done, info = train_env.step(rand_action)
         buffer.push(state, rand_action, reward, next_state, done)
         state = next_state
 
     for episode in range(args.num_episodes):
-        rollout = utils.collect_rollout(agent, random_process, env, args)
+        rollout = utils.collect_rollout(agent, random_process, train_env, args)
 
         for (state, action, rew, next_state, done, info) in rollout:
             buffer.push(state, action, rew, next_state, done)
 
-            if args.her:
-                raise ValueError(f"HER Not Supported on standard (non goal-based environments). For now, this means HER only works with the robotics sims.")
-
         for optimization_step in range(args.opt_steps):
-            _naf_optimization_step(args, buffer, target_agent, agent, optimizer)
+            _naf_learn(args, buffer, target_agent, agent, optimizer)
             # move target model towards training model
             utils.soft_update(target_agent.network, agent.network, args.tau)
         
         if episode % args.eval_interval == 0:
-            mean_return = utils.evaluate_agent(agent, env, args)
+            mean_return = utils.evaluate_agent(agent, test_env, args)
             print(f"Episodes of training: {episode+1}, mean reward in test mode: {mean_return}")
    
     agent.save(save_dir)
     return agent
 
 
-def _dict_based_naf(agent, target_agent, random_process, buffer, optimizer, save_dir, env, args):
-    """
-    NAF specifically modified to deal with the Dictionary state spaces used by the robotics environments in this paper:
-    https://arxiv.org/abs/1802.09464
-    """
-    # use warmp up steps to add random transitions to the buffer
-    state = env.reset()
-    done = False
-    for _ in range(args.warmup_steps):
-        if done: state = env.reset(); done = False
-        rand_action = env.action_space.sample()
-        next_state, reward, done, info = env.step(rand_action)
-        state_goal = np.concatenate((state['observation'], state['desired_goal']))
-        next_state_goal = np.concatenate((next_state['observation'], next_state['desired_goal']))
-        buffer.push(state_goal, rand_action, reward, next_state_goal, done)
-        state = next_state
-
-    for episode in range(args.num_episodes):
-        rollout = utils.collect_rollout(agent, random_process, env, args)
-
-        # add rollout to buffer
-        substitute_goal = rollout[-1][3]['achieved_goal'] # last state reached on the rollout
-        for (state, action, rew, next_state, done, info) in rollout:
-            state_goal = np.concatenate((state['observation'], state['desired_goal']))
-            next_state_goal = np.concatenate((next_state['observation'], next_state['desired_goal']))
-            buffer.push(state_goal, action, rew, next_state_goal, done)
-
-            if args.her:
-                new_rew = env.compute_reward(state['achieved_goal'], substitute_goal, info)
-                new_done = True if new_rew == 0. else False
-                new_state_goal = np.concatenate((state['observation'], substitute_goal))
-                new_next_state_goal = np.concatenate((next_state['observation'], substitute_goal))
-                buffer.push(new_state_goal, action, new_rew, new_next_state_goal, new_done)
-
-        for optimization_step in range(args.opt_steps):
-            _naf_optimization_step(args, buffer, target_agent, agent, optimizer)
-            # move target model towards training model
-            utils.soft_update(target_agent.network, agent.network, args.tau)
-        
-        if episode % args.eval_interval == 0:
-            mean_return = utils.evaluate_agent(agent, env, args)
-            print(f"Episodes of training: {episode+1}, mean reward in test mode: {mean_return}")
-   
-    agent.save(save_dir)
-    return agent
-
-def _naf_optimization_step(args, buffer, target_agent, agent, optimizer):
+def _naf_learn(args, buffer, target_agent, agent, optimizer):
     batch = buffer.sample(args.batch_size)
     if not batch:
         return
@@ -157,7 +97,8 @@ def _naf_optimization_step(args, buffer, target_agent, agent, optimizer):
     optimizer.zero_grad()
     loss = F.mse_loss(td_targets, agent_qval_preds)
     loss.backward()
-    torch.nn.utils.clip_grad_norm_(agent.network.parameters(), args.clip)
+    if args.clip:
+        torch.nn.utils.clip_grad_norm_(agent.network.parameters(), args.clip)
     optimizer.step()
 
 def parse_args():
@@ -196,8 +137,7 @@ def parse_args():
     parser.add_argument('--log_interval', type=int, default=10)
     parser.add_argument('--l2', type=float, default=.0)
     parser.add_argument('--save_interval', type=int, default=1000)
-    parser.add_argument('--clip', type=float, default=100.)
-    parser.add_argument('--her', action='store_true')
+    parser.add_argument('--clip', type=float, default=None)
     parser.add_argument('--opt_steps', type=int, default=50)
     return parser.parse_args()
 
