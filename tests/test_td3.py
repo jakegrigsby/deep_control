@@ -6,7 +6,7 @@ import pybullet
 
 def make_test_td3_args():
     args = argparse.Namespace()
-    args.num_episodes = 1
+    args.num_steps = 25
     args.max_episode_steps = 100
     args.batch_size = 2
     args.tau = .001
@@ -31,6 +31,7 @@ def make_test_td3_args():
     args.delay = 2
     args.target_noise_scale = .2
     args.c = .5
+    args.save_interval = 20
     return args
 
 ####################

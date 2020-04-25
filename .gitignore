@@ -8,3 +8,5 @@ __pycache__/
 .eggs/
 
 deep_control.egg-info/
+
+saves/

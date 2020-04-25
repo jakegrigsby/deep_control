@@ -6,7 +6,7 @@ import pybullet
 
 def make_test_naf_args():
     args = argparse.Namespace()
-    args.num_episodes = 1
+    args.num_steps = 25
     args.max_episode_steps = 100
     args.batch_size = 2
     args.tau = .001
@@ -18,15 +18,14 @@ def make_test_naf_args():
     args.theta = .15
     args.sigma = .2
     args.buffer_size = 1000
-    args.eval_interval = 1
+    args.eval_interval = 100
     args.eval_episodes = 1
     args.warmup_steps = 10
     args.l2 = .0001
     args.render = False
     args.clip = 1.
     args.name = 'test_naf_run'
-    args.opt_steps = 2
-    print(vars(args))
+    args.save_interval = 20
     return args
 
 

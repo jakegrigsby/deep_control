@@ -11,6 +11,25 @@ from . import run
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+def clean_hparams_dict(hparams_dict):
+    return {key:val for key, val in hparams_dict.items() if val}
+
+def warmup_buffer(buffer, env, warmup_steps, max_episode_steps):
+    # use warmp up steps to add random transitions to the buffer
+    state = env.reset()
+    done = False
+    steps_this_ep = 0
+    for _ in range(warmup_steps):
+        if done: 
+            state = env.reset()
+            steps_this_ep = 0
+            done = False
+        rand_action = env.action_space.sample()
+        next_state, reward, done, info = env.step(rand_action)
+        buffer.push(state, rand_action, reward, next_state, done)
+        state = next_state
+        steps_this_ep += 1
+        if steps_this_ep >= max_episode_steps: done = True
 
 class FlattenRoboticsDictWrapper(gym.Wrapper):
     def __init_(self, env):
@@ -42,23 +61,6 @@ def evaluate_agent(agent, env, args):
     returns = run.run(agent, env, args.eval_episodes, args.max_episode_steps, args.render, verbosity=0)
     mean_return = returns.mean()
     return mean_return
-
-def collect_rollout(agent, random_process, env, args):
-    # collect new experience
-    state = env.reset()
-    random_process.reset_states()
-    done = False 
-    rollout = []
-    for step in range(args.max_episode_steps):
-        if done: break
-        action = agent.forward(state)
-        noisy_action = exploration_noise(action, random_process)
-        next_state, reward, done, info = env.step(noisy_action)
-        if args.render: env.render()
-        rollout.append((state, noisy_action, reward, next_state, done, info))
-        state = next_state
-    return rollout
-
 
 class ReplayBuffer:
     
@@ -93,7 +95,7 @@ def mean(lst):
     return float(sum(lst)) / len(lst)
 
 
-def make_process_dirs(run_name, base_path='saves'):
+def make_process_dirs(run_name, base_path='dc_saves'):
     base_dir = os.path.join(base_path, run_name)
     i = 0
     while os.path.exists(base_dir + f"_{i}"):

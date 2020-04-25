@@ -4,6 +4,7 @@ import copy
 
 import torch
 import torch.nn.functional as F
+import tensorboardX
 import numpy as np
 import gym
 
@@ -26,6 +27,7 @@ def ddpg(agent, train_env, args):
     target_agent.to(device)
     utils.hard_update(target_agent.actor, agent.actor)
     utils.hard_update(target_agent.critic, agent.critic)
+    test_env = copy.deepcopy(train_env)
 
     random_process = utils.OrnsteinUhlenbeckProcess(size=train_env.action_space.shape, sigma=args.sigma_start, sigma_min=args.sigma_final, n_steps_annealing=args.sigma_anneal, theta=args.theta)
 
@@ -33,37 +35,46 @@ def ddpg(agent, train_env, args):
     critic_optimizer = torch.optim.Adam(agent.critic.parameters(), lr=args.critic_lr, weight_decay=args.critic_l2)
     actor_optimizer = torch.optim.Adam(agent.actor.parameters(), lr=args.actor_lr, weight_decay=args.actor_l2)
 
+    # create save directory for this run
     save_dir = utils.make_process_dirs(args.name)
-    test_env = copy.deepcopy(train_env)
+    # create tb writer, save hparams
+    writer = tensorboardX.SummaryWriter(save_dir)
+    hparams_dict = utils.clean_hparams_dict(vars(args))
+    writer.add_hparams(hparams_dict, {})
 
-    # use warmp up steps to add random transitions to the buffer
-    state = train_env.reset()
-    done = False
-    for _ in range(args.warmup_steps):
-        if done: state = train_env.reset(); done = False
-        rand_action = train_env.action_space.sample()
-        next_state, reward, done, info = train_env.step(rand_action)
-        buffer.push(state, rand_action, reward, next_state, done)
-        state = next_state
+    utils.warmup_buffer(buffer, train_env, args.warmup_steps, args.max_episode_steps)
 
-    for episode in range(args.num_episodes):
-        rollout = utils.collect_rollout(agent, random_process, train_env, args)
+    done = True
+    learning_curve = []
+    for step in range(args.num_steps):
+        if done: 
+            state = train_env.reset()
+            random_process.reset_states()
+            steps_this_ep = 0
+            done = False
+        action = agent.forward(state)
+        noisy_action = utils.exploration_noise(action, random_process)
+        next_state, reward, done, info = train_env.step(noisy_action)
+        buffer.push(state, noisy_action, reward, next_state, done)
+        next_state = state
+        steps_this_ep += 1
+        if steps_this_ep >= args.max_episode_steps: done = True
 
-        for (state, action, rew, next_state, done, info) in rollout:
-            buffer.push(state, action, rew, next_state, done)
-
-        for optimization_step in range(args.opt_steps):
-            _ddpg_learn(args, buffer, target_agent, agent, actor_optimizer, critic_optimizer)
-            # move target model towards training model
-            utils.soft_update(target_agent.actor, agent.actor, args.tau)
-            utils.soft_update(target_agent.critic, agent.critic, args.tau)
+        _ddpg_learn(args, buffer, target_agent, agent, actor_optimizer, critic_optimizer)
+        # move target model towards training model
+        utils.soft_update(target_agent.actor, agent.actor, args.tau)
+        utils.soft_update(target_agent.critic, agent.critic, args.tau)
         
-        if episode % args.eval_interval == 0:
+        if step % args.eval_interval == 0:
             mean_return = utils.evaluate_agent(agent, test_env, args)
-            print(f"Episodes of training: {episode+1}, mean reward in test mode: {mean_return}")
-   
+            writer.add_scalar('return', mean_return, step)
+            learning_curve.append((step, mean_return))
+
+        if step % args.save_interval == 0:
+            agent.save(save_dir)
+
     agent.save(save_dir)
-    return agent
+    return agent, learning_curve
 
 def _ddpg_learn(args, buffer, target_agent, agent, actor_optimizer, critic_optimizer):
     """
@@ -86,6 +97,7 @@ def _ddpg_learn(args, buffer, target_agent, agent, actor_optimizer, critic_optim
     done_batch = list_to_tensor(done_batch).T
 
     agent.train()
+    target_agent.train()
 
     # critic update
     with torch.no_grad():
@@ -112,11 +124,11 @@ def _ddpg_learn(args, buffer, target_agent, agent, actor_optimizer, critic_optim
 def parse_args():
     parser = argparse.ArgumentParser(description='Train agent with DDPG')
     parser.add_argument('--env', type=str, default='Pendulum-v0', help='training environment')
-    parser.add_argument('--num_episodes', type=int, default=500,
+    parser.add_argument('--num_steps', type=int, default=1000000,
                         help='number of episodes for training')
     parser.add_argument('--max_episode_steps', type=int, default=100000,
                         help='maximum steps per episode')
-    parser.add_argument('--batch_size', type=int, default=128,
+    parser.add_argument('--batch_size', type=int, default=64,
                         help='training batch size')
     parser.add_argument('--tau', type=float, default=.005,
                         help='for model parameter % update')
@@ -134,19 +146,19 @@ def parse_args():
         help='sigma for Ornstein Uhlenbeck process computation')
     parser.add_argument('--buffer_size', type=int, default=100000,
         help='replay buffer size')
-    parser.add_argument('--eval_interval', type=int, default=15,
-        help='how often to test the agent without exploration (in episodes)')
+    parser.add_argument('--eval_interval', type=int, default=5000,
+        help='how often to test the agent without exploration (in steps)')
     parser.add_argument('--eval_episodes', type=int, default=10,
         help='how many episodes to run for when testing')
-    parser.add_argument('--warmup_steps', type=int, default=1000,
+    parser.add_argument('--warmup_steps', type=int, default=25000,
         help='warmup length, in steps')
     parser.add_argument('--render', action='store_true')
     parser.add_argument('--actor_clip', type=float, default=None)
     parser.add_argument('--critic_clip', type=float, default=None)
     parser.add_argument('--name', type=str, default='ddpg_run')
-    parser.add_argument('--opt_steps', type=int, default=50)
     parser.add_argument('--actor_l2', type=float, default=0.)
     parser.add_argument('--critic_l2', type=float, default=1e-4)
+    parser.add_argument('--save_interval', type=int, default=10000)
     return parser.parse_args()
 
 
