@@ -39,7 +39,7 @@ class NAFAgent:
         return np.squeeze(mu.cpu().numpy(), 0)
     
     def process_state(self, state):
-        return torch.from_numpy(np.expand_dims(state, 0).astype(np.float32))
+        return torch.from_numpy(np.expand_dims(state, 0).astype(np.float32)).to(utils.device)
 
 
 class DDPGAgent:
@@ -80,7 +80,7 @@ class DDPGAgent:
         return np.squeeze(action.cpu().numpy(), 0)
 
     def process_state(self, state):
-        return torch.from_numpy(np.expand_dims(state, 0).astype(np.float32))
+        return torch.from_numpy(np.expand_dims(state, 0).astype(np.float32)).to(utils.device)
 
 class TD3Agent:
     def __init__(self, obs_space_size, act_space_size, max_action):
@@ -128,5 +128,5 @@ class TD3Agent:
         return np.squeeze(action.cpu().numpy(), 0)
 
     def process_state(self, state):
-        return torch.from_numpy(np.expand_dims(state, 0).astype(np.float32))
+        return torch.from_numpy(np.expand_dims(state, 0).astype(np.float32)).to(utils.device)
 

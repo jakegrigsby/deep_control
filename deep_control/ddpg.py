@@ -166,6 +166,7 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     agent, env = run.load_env(args.env, 'ddpg')
+    print(f"Using Device: {device}")
     agent = ddpg(agent, env, args)
 
 

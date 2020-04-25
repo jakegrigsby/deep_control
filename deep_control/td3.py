@@ -99,7 +99,7 @@ def _td3_learn(args, buffer, target_agent, agent, actor_optimizer, critic1_optim
         # create critic targets (clipped double Q learning)
         target_action_s2 = target_agent.actor(next_state_batch)
         # target smoothing
-        target_action_s2 += torch.clamp(args.target_noise_scale*torch.randn(*target_action_s2.shape), -args.c, args.c)
+        target_action_s2 += torch.clamp(args.target_noise_scale*torch.randn(*target_action_s2.shape).to(device), -args.c, args.c)
         target_action_value_s2 = torch.min(target_agent.critic1(next_state_batch, target_action_s2), target_agent.critic2(next_state_batch, target_action_s2))
         td_target = reward_batch + args.gamma*(1.-done_batch)*target_action_value_s2
 
@@ -179,6 +179,7 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     agent, env = run.load_env(args.env, 'td3')
+    print(f"Using Device: {device}")
     agent = td3(agent, env, args)
 
 

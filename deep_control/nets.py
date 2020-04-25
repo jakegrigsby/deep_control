@@ -3,6 +3,8 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
+from . import utils
+
 class BaselineActor(nn.Module):
     def __init__(self, obs_size, action_size, max_action):
         super().__init__()
@@ -47,8 +49,8 @@ class BaselineNQF(torch.nn.Module):
         self.v = nn.Linear(300, 1)
         self.l = nn.Linear(300, action_size**2)
 
-        self.tril_mask = torch.autograd.Variable(torch.tril(torch.ones(action_size, action_size), diagonal=-1).unsqueeze(0))
-        self.diag_mask = torch.autograd.Variable(torch.diag(torch.diag(torch.ones(action_size, action_size))).unsqueeze(0))
+        self.tril_mask = torch.autograd.Variable(torch.tril(torch.ones(action_size, action_size), diagonal=-1).unsqueeze(0).to(utils.device))
+        self.diag_mask = torch.autograd.Variable(torch.diag(torch.diag(torch.ones(action_size, action_size))).unsqueeze(0).to(utils.device))
 
         self.action_size = action_size
         self.max_act = max_action

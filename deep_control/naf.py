@@ -5,7 +5,6 @@ import time
 import torch
 import torch.nn.functional as F
 import numpy as np
-import tqdm
 import tensorboardX
 
 from . import utils
@@ -151,4 +150,5 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     agent, env = run.load_env(args.env, 'naf')
+    print(f"Using Device: {device}")
     agent = naf(agent, env, args)
