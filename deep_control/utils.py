@@ -103,8 +103,8 @@ def make_process_dirs(run_name, base_path='dc_saves'):
     os.makedirs(base_dir)
     return base_dir
 
-def exploration_noise(action, random_process):
-    return action + random_process.sample()
+def exploration_noise(action, random_process, max_action):
+    return np.clip(action + random_process.sample(), -max_action, max_action)
 
 """
 Credit for update functions:

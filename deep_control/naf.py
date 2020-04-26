@@ -19,6 +19,7 @@ def naf(agent, env, args):
     Reference: https://arxiv.org/abs/1603.00748
     """
     agent.to(device)
+    max_act = env.action_space.high[0]
 
     # initialize target networks
     target_agent = copy.deepcopy(agent)
@@ -48,10 +49,10 @@ def naf(agent, env, args):
             steps_this_ep = 0
             done = False
         action = agent.forward(state)
-        noisy_action = utils.exploration_noise(action, random_process)
+        noisy_action = utils.exploration_noise(action, random_process, max_act)
         next_state, reward, done, info = env.step(noisy_action)
         buffer.push(state, noisy_action, reward, next_state, done)
-        next_state = state
+        state = next_state
         steps_this_ep += 1
         if steps_this_ep >= args.max_episode_steps: done = True
 

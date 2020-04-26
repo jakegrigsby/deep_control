@@ -16,6 +16,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def td3(agent, env, args):
     agent.to(device)
+    max_act = env.action_space.high[0]
 
     # initialize target networks
     target_agent = copy.deepcopy(agent)
@@ -48,10 +49,10 @@ def td3(agent, env, args):
             steps_this_ep = 0
             done = False
         action = agent.forward(state)
-        noisy_action = utils.exploration_noise(action, random_process)
+        noisy_action = utils.exploration_noise(action, random_process, max_act)
         next_state, reward, done, info = env.step(noisy_action)
         buffer.push(state, noisy_action, reward, next_state, done)
-        next_state = state
+        state = next_state
         steps_this_ep += 1
         if steps_this_ep >= args.max_episode_steps: done = True
 
@@ -167,7 +168,7 @@ def parse_args():
     parser.add_argument('--critic_clip', type=float, default=None)
     parser.add_argument('--name', type=str, default='ddpg_run')
     parser.add_argument('--actor_l2', type=float, default=0.)
-    parser.add_argument('--critic_l2', type=float, default=1e-4)
+    parser.add_argument('--critic_l2', type=float, default=0.)
     parser.add_argument('--delay', type=int, default=2)
     parser.add_argument('--target_noise_scale', type=float, default=.2)
     parser.add_argument('--save_interval', type=int, default=10000)
