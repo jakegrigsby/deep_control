@@ -104,7 +104,7 @@ def make_process_dirs(run_name, base_path='dc_saves'):
     return base_dir
 
 def exploration_noise(action, random_process):
-    return action + random_process.sample().astype(np.float32)
+    return action + random_process.sample()
 
 """
 Credit for update functions:
@@ -173,6 +173,9 @@ class GaussianExplorationNoise:
     def sample(self):
         noise = self._current_scale*torch.randn(*self.size)
         self._current_scale = max(self._current_scale - self._scale_slope, self.final_scale)
-        return noise
+        return noise.numpy()
+
+    def reset_states(self):
+        pass
 
 
