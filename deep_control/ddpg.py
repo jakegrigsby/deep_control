@@ -28,7 +28,12 @@ def ddpg(agent, env, args):
     utils.hard_update(target_agent.actor, agent.actor)
     utils.hard_update(target_agent.critic, agent.critic)
 
-    random_process = utils.OrnsteinUhlenbeckProcess(size=env.action_space.shape, sigma=args.sigma_start, sigma_min=args.sigma_final, n_steps_annealing=args.sigma_anneal, theta=args.theta)
+    random_process = utils.GaussianExplorationNoise(
+                            size=env.action_space.shape,
+                            start_scale=args.sigma_start,
+                            final_scale=args.sigma_final,
+                            steps_annealed=args.sigma_anneal,
+                        )
 
     buffer = utils.ReplayBuffer(args.buffer_size)
     critic_optimizer = torch.optim.Adam(agent.critic.parameters(), lr=args.critic_lr, weight_decay=args.critic_l2)
@@ -156,7 +161,7 @@ def parse_args():
     parser.add_argument('--critic_clip', type=float, default=None)
     parser.add_argument('--name', type=str, default='ddpg_run')
     parser.add_argument('--actor_l2', type=float, default=0.)
-    parser.add_argument('--critic_l2', type=float, default=1e-4)
+    parser.add_argument('--critic_l2', type=float, default=0.)
     parser.add_argument('--save_interval', type=int, default=10000)
     return parser.parse_args()
 
