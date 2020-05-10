@@ -62,8 +62,8 @@ def td3(agent, env, args):
         # move target model towards training model
         if update_policy:
             utils.soft_update(target_agent.actor, agent.actor, args.tau)
-        utils.soft_update(target_agent.critic1, agent.critic1, args.tau)
-        utils.soft_update(target_agent.critic2, agent.critic2, args.tau)
+            utils.soft_update(target_agent.critic1, agent.critic1, args.tau)
+            utils.soft_update(target_agent.critic2, agent.critic2, args.tau)
         
         if step % args.eval_interval == 0:
             mean_return = utils.evaluate_agent(agent, env, args)
