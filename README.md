@@ -1,5 +1,5 @@
 # Deep Control
-## Simple single-worker pytorch implementations of DDPG, TD3 and NAF
+## Simple single-worker pytorch implementations of deep RL algorithms for continuous control.
 
 ### Installation
 ```bash
@@ -9,7 +9,7 @@ pip install -e .
 ```
 
 ### Training
-There are three main training scripts, `ddpg.py`, `td3.py` and `naf.py`, which train a randomly initialized agent.
+There are three main training scripts, `ddpg.py`, `td3.py` and `sac.py`, which train a randomly initialized agent.
 
 ```bash
 python -m deep_control.ddpg --env AntBulletEnv-v0 --num_episodes 2000 --name my_ant_ddpg
@@ -36,8 +36,8 @@ pytest tests
 ### References
 1) https://arxiv.org/pdf/1509.02971.pdf
 2) https://arxiv.org/pdf/1603.00748.pdf`
-3) http://papers.nips.cc/paper/7090-hindsight-experience-replay
 4) https://github.com/ikostrikov/pytorch-ddpg-naf
 5) https://github.com/keras-rl/keras-rl
 6) https://arxiv.org/abs/1802.09477
 7) https://github.com/sfujim/TD3
+8) https://spinningup.openai.com/
