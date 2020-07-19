@@ -98,3 +98,30 @@ class TD3Agent:
         return torch.from_numpy(np.expand_dims(state, 0).astype(np.float32)).to(
             utils.device
         )
+
+
+class SACAgent(TD3Agent):
+    def __init__(self, obs_space_size, act_space_size, max_action):
+        self.actor = nets.StochasticActor(obs_space_size, act_space_size, max_action)
+        self.critic1 = nets.BaselineCritic(obs_space_size, act_space_size)
+        self.critic2 = nets.BaselineCritic(obs_space_size, act_space_size)
+        self.max_act = max_action
+
+    def forward(self, state):
+        state = self.process_state(state)
+        self.actor.eval()
+        with torch.no_grad():
+            act, _ = self.actor.forward(state, stochastic=False)
+        return np.squeeze(act.cpu().numpy(), 0)
+
+    def stochastic_forward(self, state, process_states=False, track_gradients=True):
+        if process_states:
+            state = self.process_state(state)
+        if track_gradients:
+            act, logp_a = self.actor.forward(state, stochastic=True)
+        else:
+            with torch.no_grad():
+                act, logp_a = self.actor.forward(state, stochastic=True)
+        if process_states:
+            act = np.squeeze(act.cpu().numpy(), 0)
+        return act, logp_a

@@ -36,8 +36,8 @@ def load_env(env_id, algo_type):
     max_action = env.action_space.high[0]
     if algo_type == "ddpg":
         agent = agents.DDPGAgent(*shape, max_action)
-    elif algo_type == "naf":
-        agent = agents.NAFAgent(*shape, max_action)
+    elif algo_type == "sac":
+        agent = agents.SACAgent(*shape, max_action)
     elif algo_type == "td3":
         agent = agents.TD3Agent(*shape, max_action)
     return agent, env

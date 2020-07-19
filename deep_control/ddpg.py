@@ -42,6 +42,7 @@ def ddpg(
     log_to_disk=True,
     save_to_disk=True,
     verbosity=0,
+    gradient_updates_per_step=1,
 ):
     """
     Train `agent` on `env` with the Deep Deterministic Policy Gradient algorithm.
@@ -72,7 +73,7 @@ def ddpg(
         agent.actor.parameters(), lr=actor_lr, weight_decay=actor_l2
     )
 
-    if save_to_disk:
+    if save_to_disk or log_to_disk:
         # create save directory for this run
         save_dir = utils.make_process_dirs(name)
     if log_to_disk:
@@ -103,20 +104,21 @@ def ddpg(
         if steps_this_ep >= max_episode_steps:
             done = True
 
-        _ddpg_learn(
-            buffer,
-            target_agent,
-            agent,
-            actor_optimizer,
-            critic_optimizer,
-            batch_size,
-            gamma,
-            critic_clip,
-            actor_clip,
-        )
-        # move target model towards training model
-        utils.soft_update(target_agent.actor, agent.actor, tau)
-        utils.soft_update(target_agent.critic, agent.critic, tau)
+        for _ in range(gradient_updates_per_step):
+            _ddpg_learn(
+                buffer,
+                target_agent,
+                agent,
+                actor_optimizer,
+                critic_optimizer,
+                batch_size,
+                gamma,
+                critic_clip,
+                actor_clip,
+            )
+            # move target model towards training model
+            utils.soft_update(target_agent.actor, agent.actor, tau)
+            utils.soft_update(target_agent.critic, agent.critic, tau)
 
         if step % eval_interval == 0:
             mean_return = utils.evaluate_agent(
@@ -268,6 +270,7 @@ def parse_args():
     parser.add_argument("--verbosity", type=int, default=1)
     parser.add_argument("--skip_save_to_disk", action="store_true")
     parser.add_argument("--skip_log_to_disk", action="store_true")
+    parser.add_argument("--gradient_updates_per_step", type=int, default=1)
     return parser.parse_args()
 
 
@@ -303,4 +306,5 @@ if __name__ == "__main__":
         save_to_disk=not args.skip_save_to_disk,
         log_to_disk=not args.skip_log_to_disk,
         verbosity=args.verbosity,
+        gradient_updates_per_step=args.gradient_updates_per_step,
     )

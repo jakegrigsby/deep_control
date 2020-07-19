@@ -14,7 +14,7 @@ from . import run, utils
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def td3(
+def sac(
     agent,
     env,
     num_steps=1_000_000,
@@ -24,10 +24,6 @@ def td3(
     actor_lr=1e-4,
     critic_lr=1e-3,
     gamma=0.99,
-    sigma_start=0.2,
-    sigma_final=0.1,
-    sigma_anneal=10_000,
-    theta=0.15,
     buffer_size=1_000_000,
     eval_interval=5000,
     eval_episodes=10,
@@ -36,16 +32,15 @@ def td3(
     critic_clip=None,
     actor_l2=0.0,
     critic_l2=0.0,
-    delay=2,
-    target_noise_scale=0.2,
+    delay=1,
     save_interval=10_000,
-    c=0.5,
-    name="td3_run",
+    name="sac_run",
     render=False,
     save_to_disk=True,
     log_to_disk=True,
     verbosity=0,
     gradient_updates_per_step=1,
+    alpha=0.2,
 ):
 
     agent.to(device)
@@ -58,15 +53,8 @@ def td3(
     utils.hard_update(target_agent.critic1, agent.critic1)
     utils.hard_update(target_agent.critic2, agent.critic2)
 
-    random_process = utils.OrnsteinUhlenbeckProcess(
-        size=env.action_space.shape,
-        sigma=sigma_start,
-        sigma_min=sigma_final,
-        n_steps_annealing=sigma_anneal,
-        theta=theta,
-    )
-
     buffer = utils.ReplayBuffer(buffer_size)
+
     critic1_optimizer = torch.optim.Adam(
         agent.critic1.parameters(), lr=critic_lr, weight_decay=critic_l2
     )
@@ -77,7 +65,7 @@ def td3(
         agent.actor.parameters(), lr=actor_lr, weight_decay=actor_l2
     )
 
-    if save_to_disk or log_to_disk:
+    if save_to_disk:
         save_dir = utils.make_process_dirs(name)
     if log_to_disk:
         # create tb writer, save hparams
@@ -95,13 +83,13 @@ def td3(
     for step in steps_iter:
         if done:
             state = env.reset()
-            random_process.reset_states()
             steps_this_ep = 0
             done = False
-        action = agent.forward(state)
-        noisy_action = utils.exploration_noise(action, random_process, max_act)
-        next_state, reward, done, info = env.step(noisy_action)
-        buffer.push(state, noisy_action, reward, next_state, done)
+        action, _ = agent.stochastic_forward(
+            state, track_gradients=False, process_states=True
+        )
+        next_state, reward, done, info = env.step(action)
+        buffer.push(state, action, reward, next_state, done)
         state = next_state
         steps_this_ep += 1
         if steps_this_ep >= max_episode_steps:
@@ -109,27 +97,25 @@ def td3(
 
         update_policy = step % delay == 0
         for _ in range(gradient_updates_per_step):
-            _td3_learn(
-                buffer,
-                target_agent,
-                agent,
-                actor_optimizer,
-                critic1_optimizer,
-                critic2_optimizer,
-                env.action_space.high[0],
-                batch_size,
-                target_noise_scale,
-                c,
-                gamma,
-                critic_clip,
-                actor_clip,
-                update_policy,
+            _sac_learn(
+                buffer=buffer,
+                target_agent=target_agent,
+                agent=agent,
+                actor_optimizer=actor_optimizer,
+                critic1_optimizer=critic1_optimizer,
+                critic2_optimizer=critic2_optimizer,
+                max_act=env.action_space.high[0],
+                batch_size=batch_size,
+                alpha=alpha,
+                gamma=gamma,
+                critic_clip=critic_clip,
+                actor_clip=actor_clip,
+                update_policy=update_policy,
             )
 
             # move target model towards training model
             if update_policy:
                 utils.soft_update(target_agent.actor, agent.actor, tau)
-                # original td3 impl only updates critic targets with the actor...
                 utils.soft_update(target_agent.critic1, agent.critic1, tau)
                 utils.soft_update(target_agent.critic2, agent.critic2, tau)
 
@@ -150,7 +136,7 @@ def td3(
     return agent
 
 
-def _td3_learn(
+def _sac_learn(
     buffer,
     target_agent,
     agent,
@@ -159,8 +145,7 @@ def _td3_learn(
     critic2_optimizer,
     max_act,
     batch_size,
-    target_noise_scale,
-    c,
+    alpha,
     gamma,
     critic_clip,
     actor_clip,
@@ -186,19 +171,16 @@ def _td3_learn(
 
     with torch.no_grad():
         # create critic targets (clipped double Q learning)
-        target_action_s2 = target_agent.actor(next_state_batch)
-        target_noise = torch.clamp(
-            target_noise_scale * torch.randn(*target_action_s2.shape).to(device), -c, c
-        )
-        # target smoothing
-        target_action_s2 = torch.clamp(
-            target_action_s2 + target_noise, -max_act, max_act
+        action_s2, logp_a2 = agent.stochastic_forward(
+            next_state_batch, track_gradients=False, process_states=False
         )
         target_action_value_s2 = torch.min(
-            target_agent.critic1(next_state_batch, target_action_s2),
-            target_agent.critic2(next_state_batch, target_action_s2),
+            target_agent.critic1(next_state_batch, action_s2),
+            target_agent.critic2(next_state_batch, action_s2),
         )
-        td_target = reward_batch + gamma * (1.0 - done_batch) * target_action_value_s2
+        td_target = reward_batch + gamma * (1.0 - done_batch) * (
+            target_action_value_s2 - (alpha * logp_a2)
+        )
 
     # update first critic
     agent_critic1_pred = agent.critic1(state_batch, action_batch)
@@ -220,8 +202,12 @@ def _td3_learn(
 
     if update_policy:
         # actor update
-        agent_actions = agent.actor(state_batch)
-        actor_loss = -agent.critic1(state_batch, agent_actions).mean()
+        agent_actions, logp_a = agent.stochastic_forward(
+            state_batch, track_gradients=True, process_states=False
+        )
+        actor_loss = (
+            -agent.critic1(state_batch, agent_actions) + (alpha * logp_a)
+        ).mean()
         actor_optimizer.zero_grad()
         actor_loss.backward()
         if actor_clip:
@@ -230,7 +216,7 @@ def _td3_learn(
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Train agent with TD3")
+    parser = argparse.ArgumentParser(description="Train agent with SAC")
     parser.add_argument(
         "--env", type=str, default="Pendulum-v0", help="training environment"
     )
@@ -258,24 +244,8 @@ def parse_args():
     parser.add_argument(
         "--gamma", type=float, default=0.99, help="gamma, the discount factor"
     )
-    parser.add_argument("--sigma_final", type=float, default=0.1)
     parser.add_argument(
-        "--sigma_anneal",
-        type=float,
-        default=10000,
-        help="How many steps to anneal sigma over.",
-    )
-    parser.add_argument(
-        "--theta",
-        type=float,
-        default=0.15,
-        help="theta for Ornstein Uhlenbeck process computation",
-    )
-    parser.add_argument(
-        "--sigma_start",
-        type=float,
-        default=0.2,
-        help="sigma for Ornstein Uhlenbeck process computation",
+        "--alpha", type=float, default=0.2, help="Entropy regularization coefficeint."
     )
     parser.add_argument(
         "--buffer_size", type=int, default=1000000, help="replay buffer size"
@@ -302,9 +272,7 @@ def parse_args():
     parser.add_argument("--actor_l2", type=float, default=0.0)
     parser.add_argument("--critic_l2", type=float, default=0.0)
     parser.add_argument("--delay", type=int, default=2)
-    parser.add_argument("--target_noise_scale", type=float, default=0.2)
     parser.add_argument("--save_interval", type=int, default=10000)
-    parser.add_argument("--c", type=float, default=0.5)
     parser.add_argument("--verbosity", type=int, default=1)
     parser.add_argument("--gradient_updates_per_step", type=int, default=1)
     return parser.parse_args()
@@ -312,9 +280,9 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    agent, env = run.load_env(args.env, "td3")
+    agent, env = run.load_env(args.env, "sac")
     print(f"Using Device: {device}")
-    agent = td3(
+    agent = sac(
         agent,
         env,
         num_steps=args.num_steps,
@@ -324,10 +292,6 @@ if __name__ == "__main__":
         actor_lr=args.actor_lr,
         critic_lr=args.critic_lr,
         gamma=args.gamma,
-        sigma_start=args.sigma_start,
-        sigma_final=args.sigma_final,
-        sigma_anneal=args.sigma_anneal,
-        theta=args.theta,
         buffer_size=args.buffer_size,
         eval_interval=args.eval_interval,
         eval_episodes=args.eval_episodes,
@@ -336,10 +300,9 @@ if __name__ == "__main__":
         critic_clip=args.critic_clip,
         actor_l2=args.actor_l2,
         critic_l2=args.critic_l2,
+        alpha=args.alpha,
         delay=args.delay,
-        target_noise_scale=args.target_noise_scale,
         save_interval=args.save_interval,
-        c=args.c,
         name=args.name,
         render=args.render,
         verbosity=args.verbosity,
