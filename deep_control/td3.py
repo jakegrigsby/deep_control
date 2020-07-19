@@ -7,6 +7,7 @@ import numpy as np
 import tensorboardX
 import torch
 import torch.nn.functional as F
+import tqdm
 
 from . import run, utils
 
@@ -41,6 +42,9 @@ def td3(
     c=0.5,
     name="td3_run",
     render=False,
+    save_to_disk=True,
+    log_to_disk=True,
+    verbosity=0,
 ):
 
     agent.to(device)
@@ -72,15 +76,22 @@ def td3(
         agent.actor.parameters(), lr=actor_lr, weight_decay=actor_l2
     )
 
-    save_dir = utils.make_process_dirs(name)
-    # create tb writer, save hparams
-    writer = tensorboardX.SummaryWriter(save_dir)
+    if save_to_disk:
+        save_dir = utils.make_process_dirs(name)
+    if log_to_disk:
+        # create tb writer, save hparams
+        writer = tensorboardX.SummaryWriter(save_dir)
 
     utils.warmup_buffer(buffer, env, warmup_steps, max_episode_steps)
 
     done = True
     learning_curve = []
-    for step in range(num_steps):
+
+    steps_iter = range(num_steps)
+    if verbosity:
+        steps_iter = tqdm.tqdm(steps_iter)
+
+    for step in steps_iter:
         if done:
             state = env.reset()
             random_process.reset_states()
@@ -116,20 +127,23 @@ def td3(
         # move target model towards training model
         if update_policy:
             utils.soft_update(target_agent.actor, agent.actor, tau)
-        utils.soft_update(target_agent.critic1, agent.critic1, tau)
-        utils.soft_update(target_agent.critic2, agent.critic2, tau)
+            # original td3 impl only updates critic targets with the actor...
+            utils.soft_update(target_agent.critic1, agent.critic1, tau)
+            utils.soft_update(target_agent.critic2, agent.critic2, tau)
 
         if step % eval_interval == 0:
             mean_return = utils.evaluate_agent(
                 agent, env, eval_episodes, max_episode_steps, render
             )
-            writer.add_scalar("return", mean_return, step)
+            if log_to_disk:
+                writer.add_scalar("return", mean_return, step)
             learning_curve.append((step, mean_return))
 
-        if step % save_interval == 0:
+        if step % save_interval == 0 and save_to_disk:
             agent.save(save_dir)
 
-    agent.save(save_dir)
+    if save_to_disk:
+        agent.save(save_dir)
     return agent
 
 
@@ -288,6 +302,7 @@ def parse_args():
     parser.add_argument("--target_noise_scale", type=float, default=0.2)
     parser.add_argument("--save_interval", type=int, default=10000)
     parser.add_argument("--c", type=float, default=0.5)
+    parser.add_argument("--verbosity", type=int, default=1)
     return parser.parse_args()
 
 
@@ -323,4 +338,5 @@ if __name__ == "__main__":
         c=args.c,
         name=args.name,
         render=args.render,
+        verbosity=args.verbosity,
     )

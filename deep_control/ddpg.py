@@ -7,6 +7,7 @@ import numpy as np
 import tensorboardX
 import torch
 import torch.nn.functional as F
+import tqdm
 
 from . import run, utils
 
@@ -38,6 +39,9 @@ def ddpg(
     actor_l2=0.0,
     critic_l2=0.0,
     save_interval=10_000,
+    log_to_disk=True,
+    save_to_disk=True,
+    verbosity=0,
 ):
     """
     Train `agent` on `env` with the Deep Deterministic Policy Gradient algorithm.
@@ -68,16 +72,23 @@ def ddpg(
         agent.actor.parameters(), lr=actor_lr, weight_decay=actor_l2
     )
 
-    # create save directory for this run
-    save_dir = utils.make_process_dirs(name)
-    # create tb writer, save hparams
-    writer = tensorboardX.SummaryWriter(save_dir)
+    if save_to_disk:
+        # create save directory for this run
+        save_dir = utils.make_process_dirs(name)
+    if log_to_disk:
+        # create tb writer, save hparams
+        writer = tensorboardX.SummaryWriter(save_dir)
 
     utils.warmup_buffer(buffer, env, warmup_steps, max_episode_steps)
 
     done = True
     learning_curve = []
-    for step in range(num_steps):
+
+    steps_iter = range(num_steps)
+    if verbosity:
+        steps_iter = tqdm.tqdm(steps_iter)
+
+    for step in steps_iter:
         if done:
             state = env.reset()
             random_process.reset_states()
@@ -111,13 +122,15 @@ def ddpg(
             mean_return = utils.evaluate_agent(
                 agent, env, eval_episodes, max_episode_steps, render
             )
-            writer.add_scalar("return", mean_return, step)
+            if log_to_disk:
+                writer.add_scalar("return", mean_return, step)
             learning_curve.append((step, mean_return))
 
-        if step % save_interval == 0:
+        if step % save_interval == 0 and save_to_disk:
             agent.save(save_dir)
 
-    agent.save(save_dir)
+    if save_to_disk:
+        agent.save(save_dir)
     return agent, learning_curve
 
 
@@ -252,6 +265,9 @@ def parse_args():
     parser.add_argument("--actor_l2", type=float, default=0.0)
     parser.add_argument("--critic_l2", type=float, default=0.0)
     parser.add_argument("--save_interval", type=int, default=10000)
+    parser.add_argument("--verbosity", type=int, default=1)
+    parser.add_argument("--skip_save_to_disk", action="store_true")
+    parser.add_argument("--skip_log_to_disk", action="store_true")
     return parser.parse_args()
 
 
@@ -284,4 +300,7 @@ if __name__ == "__main__":
         save_interval=args.save_interval,
         render=args.render,
         name=args.name,
+        save_to_disk=not args.skip_save_to_disk,
+        log_to_disk=not args.skip_log_to_disk,
+        verbosity=args.verbosity,
     )
