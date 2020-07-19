@@ -14,7 +14,31 @@ from . import run
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def ddpg(agent, env, args):
+def ddpg(agent, 
+        env, 
+        num_steps=1_000_000,
+        max_episode_steps=100_000,
+        batch_size=64,
+        tau=.005,
+        actor_lr=1e-4,
+        critic_lr=1e-3,
+        gamma=.99,
+        sigma_start=.2,
+        sigma_final=.1,
+        sigma_anneal=10_000,
+        theta=.15,
+        buffer_size=1_000_000,
+        eval_interval=5000,
+        eval_episodes=10,
+        warmup_steps=1000,
+        render=False,
+        actor_clip=None,
+        critic_clip=None,
+        name='ddpg_run',
+        actor_l2=0.,
+        critic_l2=0.,
+        save_interval=10_000,
+        ):
     """
     Train `agent` on `env` with the Deep Deterministic Policy Gradient algorithm.
 
@@ -31,27 +55,25 @@ def ddpg(agent, env, args):
 
     random_process = utils.GaussianExplorationNoise(
                             size=env.action_space.shape,
-                            start_scale=args.sigma_start,
-                            final_scale=args.sigma_final,
-                            steps_annealed=args.sigma_anneal,
+                            start_scale=sigma_start,
+                            final_scale=sigma_final,
+                            steps_annealed=sigma_anneal,
                         )
 
-    buffer = utils.ReplayBuffer(args.buffer_size)
-    critic_optimizer = torch.optim.Adam(agent.critic.parameters(), lr=args.critic_lr, weight_decay=args.critic_l2)
-    actor_optimizer = torch.optim.Adam(agent.actor.parameters(), lr=args.actor_lr, weight_decay=args.actor_l2)
+    buffer = utils.ReplayBuffer(buffer_size)
+    critic_optimizer = torch.optim.Adam(agent.critic.parameters(), lr=critic_lr, weight_decay=critic_l2)
+    actor_optimizer = torch.optim.Adam(agent.actor.parameters(), lr=actor_lr, weight_decay=actor_l2)
 
     # create save directory for this run
-    save_dir = utils.make_process_dirs(args.name)
+    save_dir = utils.make_process_dirs(name)
     # create tb writer, save hparams
     writer = tensorboardX.SummaryWriter(save_dir)
-    hparams_dict = utils.clean_hparams_dict(vars(args))
-    writer.add_hparams(hparams_dict, {})
 
-    utils.warmup_buffer(buffer, env, args.warmup_steps, args.max_episode_steps)
+    utils.warmup_buffer(buffer, env, warmup_steps, max_episode_steps)
 
     done = True
     learning_curve = []
-    for step in range(args.num_steps):
+    for step in range(num_steps):
         if done: 
             state = env.reset()
             random_process.reset_states()
@@ -63,25 +85,25 @@ def ddpg(agent, env, args):
         buffer.push(state, noisy_action, reward, next_state, done)
         state = next_state
         steps_this_ep += 1
-        if steps_this_ep >= args.max_episode_steps: done = True
+        if steps_this_ep >= max_episode_steps: done = True
 
-        _ddpg_learn(args, buffer, target_agent, agent, actor_optimizer, critic_optimizer)
+        _ddpg_learn(buffer, target_agent, agent, actor_optimizer, critic_optimizer, batch_size, gamma, critic_clip, actor_clip)
         # move target model towards training model
-        utils.soft_update(target_agent.actor, agent.actor, args.tau)
-        utils.soft_update(target_agent.critic, agent.critic, args.tau)
+        utils.soft_update(target_agent.actor, agent.actor, tau)
+        utils.soft_update(target_agent.critic, agent.critic, tau)
         
-        if step % args.eval_interval == 0:
-            mean_return = utils.evaluate_agent(agent, env, args)
+        if step % eval_interval == 0:
+            mean_return = utils.evaluate_agent(agent, env, eval_episodes, max_episode_steps, render)
             writer.add_scalar('return', mean_return, step)
             learning_curve.append((step, mean_return))
 
-        if step % args.save_interval == 0:
+        if step % save_interval == 0:
             agent.save(save_dir)
 
     agent.save(save_dir)
     return agent, learning_curve
 
-def _ddpg_learn(args, buffer, target_agent, agent, actor_optimizer, critic_optimizer):
+def _ddpg_learn(buffer, target_agent, agent, actor_optimizer, critic_optimizer, batch_size, gamma, critic_clip, actor_clip):
     """
     DDPG inner optimization loop
     """
@@ -143,13 +165,13 @@ def parse_args():
                         help='critic learning rate')
     parser.add_argument('--gamma', type=float, default=.99,
                         help='gamma, the discount factor')
-    parser.add_argument('--sigma_final', type=float, default=.2)
-    parser.add_argument('--sigma_anneal', type=float, default=10000, help='How many steps to anneal sigma over.')
+    parser.add_argument('--sigma_final', type=float, default=.1)
+    parser.add_argument('--sigma_anneal', type=float, default=100000, help='How many steps to anneal sigma over.')
     parser.add_argument('--theta', type=float, default=.15,
         help='theta for Ornstein Uhlenbeck process computation')
     parser.add_argument('--sigma_start', type=float, default=.2,
         help='sigma for Ornstein Uhlenbeck process computation')
-    parser.add_argument('--buffer_size', type=int, default=100000,
+    parser.add_argument('--buffer_size', type=int, default=1000000,
         help='replay buffer size')
     parser.add_argument('--eval_interval', type=int, default=5000,
         help='how often to test the agent without exploration (in steps)')
@@ -172,6 +194,30 @@ if __name__ == "__main__":
     args = parse_args()
     agent, env = run.load_env(args.env, 'ddpg')
     print(f"Using Device: {device}")
-    agent = ddpg(agent, env, args)
+    agent = ddpg(agent, 
+            env, 
+            num_steps=args.num_steps,
+            max_episode_steps=args.max_episode_steps,
+            batch_size=args.batch_size,
+            tau=args.tau,
+            actor_lr=args.actor_lr,
+            critic_lr=args.critic_lr,
+            gamma=args.gamma,
+            sigma_start=args.sigma_start,
+            sigma_final=args.sigma_final,
+            sigma_anneal=args.sigma_anneal,
+            theta=args.theta,
+            buffer_size=args.buffer_size,
+            eval_interval=args.eval_interval,
+            eval_episodes=args.eval_episodes,
+            warmup_steps=args.warmup_steps,
+            actor_clip=args.actor_clip,
+            critic_clip=args.critic_clip,
+            actor_l2=args.actor_l2,
+            critic_l2=args.critic_l2,
+            save_interval=args.save_interval,
+            render=args.render,
+            name=args.name,
+            )
 
 

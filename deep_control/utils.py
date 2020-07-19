@@ -55,9 +55,9 @@ def torch_and_pad(x):
         ).unsqueeze(0)
 
 
-def evaluate_agent(agent, env, args):
+def evaluate_agent(agent, env, eval_episodes, max_episode_steps, render=False, verbosity=0):
     agent.eval()
-    returns = run.run(agent, env, args.eval_episodes, args.max_episode_steps, args.render, verbosity=0)
+    returns = run.run(agent, env, eval_episodes, max_episode_steps, render, verbosity=0)
     mean_return = returns.mean()
     return mean_return
 
