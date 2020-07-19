@@ -64,4 +64,4 @@ class StochasticActor(nn.Module):
             ).sum(axis=1)
             logp_a = logp_a.unsqueeze(1)
             act = self.max_act * torch.tanh(unsquashed_act)
-        return mu, logp_a
+        return act, logp_a

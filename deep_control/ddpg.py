@@ -105,15 +105,15 @@ def ddpg(
 
         for _ in range(gradient_updates_per_step):
             _ddpg_learn(
-                buffer,
-                target_agent,
-                agent,
-                actor_optimizer,
-                critic_optimizer,
-                batch_size,
-                gamma,
-                critic_clip,
-                actor_clip,
+                buffer=buffer,
+                target_agent=target_agent,
+                agent=agent,
+                actor_optimizer=actor_optimizer,
+                critic_optimizer=critic_optimizer,
+                batch_size=batch_size,
+                gamma=gamma,
+                critic_clip=critic_clip,
+                actor_clip=actor_clip,
             )
             # move target model towards training model
             utils.soft_update(target_agent.actor, agent.actor, tau)
