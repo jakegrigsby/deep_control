@@ -6,41 +6,6 @@ import torch
 from . import nets
 from . import utils
 
-class NAFAgent:
-    def __init__(self, obs_space_size, act_space_size, max_action):
-        self.network = nets.BaselineNQF(obs_space_size, act_space_size, max_action)
-
-    def to(self, device):
-        self.network = self.network.to(device)
-    
-    def parallelize(self):
-        if not isinstance(self.network, torch.nn.DataParallel):
-            self.actor = torch.nn.DataParallel(self.network)
-    
-    def eval(self):
-        self.network.eval()
-    
-    def train(self):
-        self.network.train()
-    
-    def save(self, path):
-        save_path = os.path.join(path, 'naf_net.pt')
-        torch.save(self.network.state_dict(), save_path)
-    
-    def load(self, path):
-        save_path = os.path.join(path, 'naf_net.pt')
-        self.network.load_state_dict(torch.load(save_path, map_location=utils.device))
-
-    def forward(self, state):
-        state = self.process_state(state)
-        self.network.eval()
-        with torch.no_grad():
-            mu, _, _ = self.network(state)
-        return np.squeeze(mu.cpu().numpy(), 0)
-    
-    def process_state(self, state):
-        return torch.from_numpy(np.expand_dims(state, 0).astype(np.float32)).to(utils.device)
-
 
 class DDPGAgent:
     def __init__(self, obs_space_size, action_space_size, max_action):
