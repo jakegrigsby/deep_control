@@ -306,7 +306,7 @@ def parse_args():
     parser.add_argument("--render", action="store_true")
     parser.add_argument("--actor_clip", type=float, default=None)
     parser.add_argument("--critic_clip", type=float, default=None)
-    parser.add_argument("--name", type=str, default="ddpg_run")
+    parser.add_argument("--name", type=str, default="td3_run")
     parser.add_argument("--actor_l2", type=float, default=0.0)
     parser.add_argument("--critic_l2", type=float, default=0.0)
     parser.add_argument("--delay", type=int, default=2)

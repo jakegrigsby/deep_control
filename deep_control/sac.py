@@ -63,7 +63,7 @@ def sac(
         agent.actor.parameters(), lr=actor_lr, weight_decay=actor_l2
     )
 
-    if save_to_disk:
+    if save_to_disk or log_to_disk:
         save_dir = utils.make_process_dirs(name)
     if log_to_disk:
         # create tb writer, save hparams
@@ -210,8 +210,12 @@ def _sac_learn(
         agent_actions, logp_a = agent.stochastic_forward(
             state_batch, track_gradients=True, process_states=False
         )
-        actor_loss = (
-            -agent.critic1(state_batch, agent_actions) + (alpha * logp_a)
+        actor_loss = -(
+            torch.min(
+                agent.critic1(state_batch, agent_actions),
+                agent.critic2(state_batch, agent_actions),
+            )
+            - (alpha * logp_a)
         ).mean()
         actor_optimizer.zero_grad()
         actor_loss.backward()
@@ -257,7 +261,7 @@ def parse_args():
         "--alpha", type=float, default=0.2, help="Entropy regularization coefficeint."
     )
     parser.add_argument(
-        "--buffer_size", type=int, default=1000000, help="replay buffer size"
+        "--buffer_size", type=int, default=1_000_000, help="replay buffer size"
     )
     parser.add_argument(
         "--eval_interval",
@@ -277,7 +281,7 @@ def parse_args():
     parser.add_argument("--render", action="store_true")
     parser.add_argument("--actor_clip", type=float, default=None)
     parser.add_argument("--critic_clip", type=float, default=None)
-    parser.add_argument("--name", type=str, default="ddpg_run")
+    parser.add_argument("--name", type=str, default="sac_run")
     parser.add_argument("--actor_l2", type=float, default=0.0)
     parser.add_argument("--critic_l2", type=float, default=0.0)
     parser.add_argument("--delay", type=int, default=2)
