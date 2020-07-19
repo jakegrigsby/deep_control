@@ -137,6 +137,7 @@ def td3(
             )
             if log_to_disk:
                 writer.add_scalar("return", mean_return, step)
+                
             learning_curve.append((step, mean_return))
 
         if step % save_interval == 0 and save_to_disk:

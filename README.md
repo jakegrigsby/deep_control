@@ -16,6 +16,12 @@ python -m deep_control.ddpg --env AntBulletEnv-v0 --num_episodes 2000 --name my_
 ```
 In this case, the trained weights will be saved to `./dc_saves/my_ant_ddpg_0`. The number on the end is automatically incremented to get a unique directory for each run.
 
+### Benchmarking
+![](misc/ant_lc.png)
+![](misc/hopper_lc.png)
+![](misc/walker_lc.png)
+
+More results will be added in the future
 ### Running a Pretrained Agent
 ```bash
 python -m deep_control.run --agent saves/my_ant_ddpg --env AntBulletEnv-v0 --render --episodes 100
