@@ -14,7 +14,7 @@ from . import replay, run, utils
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def ddpg(
+def sac(
     agent,
     env,
     buffer,
@@ -25,30 +25,24 @@ def ddpg(
     actor_lr=1e-4,
     critic_lr=1e-3,
     gamma=0.99,
-    sigma_start=0.2,
-    sigma_final=0.1,
-    sigma_anneal=10_000,
-    theta=0.15,
     eval_interval=5000,
     eval_episodes=10,
     warmup_steps=1000,
-    render=False,
     actor_clip=None,
     critic_clip=None,
-    name="ddpg_run",
     actor_l2=0.0,
     critic_l2=0.0,
+    delay=1,
     save_interval=10_000,
-    log_to_disk=True,
+    name="sac_run",
+    render=False,
     save_to_disk=True,
+    log_to_disk=True,
     verbosity=0,
     gradient_updates_per_step=1,
+    alpha=0.2,
 ):
-    """
-    Train `agent` on `env` with the Deep Deterministic Policy Gradient algorithm.
 
-    Reference: https://arxiv.org/abs/1509.02971
-    """
     agent.to(device)
     max_act = env.action_space.high[0]
 
@@ -56,24 +50,20 @@ def ddpg(
     target_agent = copy.deepcopy(agent)
     target_agent.to(device)
     utils.hard_update(target_agent.actor, agent.actor)
-    utils.hard_update(target_agent.critic, agent.critic)
+    utils.hard_update(target_agent.critic1, agent.critic1)
+    utils.hard_update(target_agent.critic2, agent.critic2)
 
-    random_process = utils.GaussianExplorationNoise(
-        size=env.action_space.shape,
-        start_scale=sigma_start,
-        final_scale=sigma_final,
-        steps_annealed=sigma_anneal,
+    critic1_optimizer = torch.optim.Adam(
+        agent.critic1.parameters(), lr=critic_lr, weight_decay=critic_l2
     )
-
-    critic_optimizer = torch.optim.Adam(
-        agent.critic.parameters(), lr=critic_lr, weight_decay=critic_l2
+    critic2_optimizer = torch.optim.Adam(
+        agent.critic2.parameters(), lr=critic_lr, weight_decay=critic_l2
     )
     actor_optimizer = torch.optim.Adam(
         agent.actor.parameters(), lr=actor_lr, weight_decay=actor_l2
     )
 
     if save_to_disk or log_to_disk:
-        # create save directory for this run
         save_dir = utils.make_process_dirs(name)
     if log_to_disk:
         # create tb writer, save hparams
@@ -91,33 +81,41 @@ def ddpg(
     for step in steps_iter:
         if done:
             state = env.reset()
-            random_process.reset_states()
             steps_this_ep = 0
             done = False
-        action = agent.forward(state)
-        noisy_action = utils.exploration_noise(action, random_process, max_act)
-        next_state, reward, done, info = env.step(noisy_action)
-        buffer.push(state, noisy_action, reward, next_state, done)
+        action, _ = agent.stochastic_forward(
+            state, track_gradients=False, process_states=True
+        )
+        next_state, reward, done, info = env.step(action)
+        buffer.push(state, action, reward, next_state, done)
         state = next_state
         steps_this_ep += 1
         if steps_this_ep >= max_episode_steps:
             done = True
 
+        update_policy = step % delay == 0
         for _ in range(gradient_updates_per_step):
-            _ddpg_learn(
+            _sac_learn(
                 buffer=buffer,
                 target_agent=target_agent,
                 agent=agent,
                 actor_optimizer=actor_optimizer,
-                critic_optimizer=critic_optimizer,
+                critic1_optimizer=critic1_optimizer,
+                critic2_optimizer=critic2_optimizer,
+                max_act=env.action_space.high[0],
                 batch_size=batch_size,
+                alpha=alpha,
                 gamma=gamma,
                 critic_clip=critic_clip,
                 actor_clip=actor_clip,
+                update_policy=update_policy,
             )
+
             # move target model towards training model
-            utils.soft_update(target_agent.actor, agent.actor, tau)
-            utils.soft_update(target_agent.critic, agent.critic, tau)
+            if update_policy:
+                utils.soft_update(target_agent.actor, agent.actor, tau)
+                utils.soft_update(target_agent.critic1, agent.critic1, tau)
+                utils.soft_update(target_agent.critic2, agent.critic2, tau)
 
         if step % eval_interval == 0:
             mean_return = utils.evaluate_agent(
@@ -125,6 +123,7 @@ def ddpg(
             )
             if log_to_disk:
                 writer.add_scalar("return", mean_return, step)
+
             learning_curve.append((step, mean_return))
 
         if step % save_interval == 0 and save_to_disk:
@@ -132,23 +131,24 @@ def ddpg(
 
     if save_to_disk:
         agent.save(save_dir)
-    return agent, learning_curve
+    return agent
 
 
-def _ddpg_learn(
+def _sac_learn(
     buffer,
     target_agent,
     agent,
     actor_optimizer,
-    critic_optimizer,
+    critic1_optimizer,
+    critic2_optimizer,
+    max_act,
     batch_size,
+    alpha,
     gamma,
     critic_clip,
     actor_clip,
+    update_policy=True,
 ):
-    """
-    DDPG inner optimization loop
-    """
     per = isinstance(buffer, replay.PrioritizedReplayBuffer)
     if per:
         batch, imp_weights, priority_idxs = buffer.sample(args.batch_size)
@@ -166,47 +166,75 @@ def _ddpg_learn(
 
     agent.train()
 
-    # critic update
     with torch.no_grad():
-        target_action_s2 = target_agent.actor(next_state_batch)
-        target_action_value_s2 = target_agent.critic(next_state_batch, target_action_s2)
-        td_target = (
-            reward_batch + args.gamma * (1.0 - done_batch) * target_action_value_s2
+        # create critic targets (clipped double Q learning)
+        action_s2, logp_a2 = agent.stochastic_forward(
+            next_state_batch, track_gradients=False, process_states=False
+        )
+        target_action_value_s2 = torch.min(
+            target_agent.critic1(next_state_batch, action_s2),
+            target_agent.critic2(next_state_batch, action_s2),
+        )
+        td_target = reward_batch + gamma * (1.0 - done_batch) * (
+            target_action_value_s2 - (alpha * logp_a2)
         )
 
-    agent_critic_pred = agent.critic(state_batch, action_batch)
-    td_error = td_target - agent_critic_pred
+    # update first critic
+    agent_critic1_pred = agent.critic1(state_batch, action_batch)
+    td_error1 = td_target - agent_critic1_pred
     if per:
-        critic_loss = (imp_weights * 0.5 * (td_error ** 2)).mean()
+        critic1_loss = (imp_weights * 0.5 * (td_error1 ** 2)).mean()
     else:
-        critic_loss = 0.5 * (td_error ** 2).mean()
-    critic_optimizer.zero_grad()
-    critic_loss.backward()
-    if args.critic_clip:
-        torch.nn.utils.clip_grad_norm_(agent.critic.parameters(), args.critic_clip)
-    critic_optimizer.step()
+        critic1_loss = 0.5 * (td_error1 ** 2).mean()
+    critic1_optimizer.zero_grad()
+    critic1_loss.backward()
+    if critic_clip:
+        torch.nn.utils.clip_grad_norm_(agent.critic1.parameters(), critic_clip)
+    critic1_optimizer.step()
 
-    # actor update
-    agent_actions = agent.actor(state_batch)
-    actor_loss = -agent.critic(state_batch, agent_actions).mean()
-    actor_optimizer.zero_grad()
-    actor_loss.backward()
-    if args.actor_clip:
-        torch.nn.utils.clip_grad_norm_(agent.actor.parameters(), args.actor_clip)
-    actor_optimizer.step()
+    # update second critic
+    agent_critic2_pred = agent.critic2(state_batch, action_batch)
+    td_error2 = td_target - agent_critic2_pred
+    if per:
+        critic2_loss = (imp_weights * 0.5 * (td_error2 ** 2)).mean()
+    else:
+        critic2_loss = 0.5 * (td_error2 ** 2).mean()
+    critic2_optimizer.zero_grad()
+    critic2_loss.backward()
+    if critic_clip:
+        torch.nn.utils.clip_grad_norm_(agent.critic2.parameters(), critic_clip)
+    critic2_optimizer.step()
+
+    if update_policy:
+        # actor update
+        agent_actions, logp_a = agent.stochastic_forward(
+            state_batch, track_gradients=True, process_states=False
+        )
+        actor_loss = -(
+            torch.min(
+                agent.critic1(state_batch, agent_actions),
+                agent.critic2(state_batch, agent_actions),
+            )
+            - (alpha * logp_a)
+        ).mean()
+        actor_optimizer.zero_grad()
+        actor_loss.backward()
+        if actor_clip:
+            torch.nn.utils.clip_grad_norm_(agent.actor.parameters(), actor_clip)
+        actor_optimizer.step()
 
     if per:
-        new_priorities = (abs(td_error) + 1e-5).cpu().detach().squeeze(1).numpy()
+        new_priorities = (abs(td_error1) + 1e-5).cpu().detach().squeeze(1).numpy()
         buffer.update_priorities(priority_idxs, new_priorities)
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Train agent with DDPG")
+    parser = argparse.ArgumentParser(description="Train agent with SAC")
     parser.add_argument(
         "--env", type=str, default="Pendulum-v0", help="training environment"
     )
     parser.add_argument(
-        "--num_steps", type=int, default=1000000, help="number of episodes for training"
+        "--num_steps", type=int, default=10 ** 6, help="number of episodes for training"
     )
     parser.add_argument(
         "--max_episode_steps",
@@ -229,30 +257,17 @@ def parse_args():
     parser.add_argument(
         "--gamma", type=float, default=0.99, help="gamma, the discount factor"
     )
-    parser.add_argument("--sigma_final", type=float, default=0.1)
     parser.add_argument(
-        "--sigma_anneal",
-        type=float,
-        default=100000,
-        help="How many steps to anneal sigma over.",
+        "--alpha", type=float, default=0.2, help="Entropy regularization coefficeint."
     )
     parser.add_argument(
-        "--theta",
-        type=float,
-        default=0.15,
-        help="theta for Ornstein Uhlenbeck process computation",
-    )
-    parser.add_argument(
-        "--sigma_start",
-        type=float,
-        default=0.2,
-        help="sigma for Ornstein Uhlenbeck process computation",
+        "--buffer_size", type=int, default=1_000_000, help="replay buffer size"
     )
     parser.add_argument(
         "--eval_interval",
         type=int,
         default=5000,
-        help="how often to test the agent without exploration (in steps)",
+        help="how often to test the agent without exploration (in episodes)",
     )
     parser.add_argument(
         "--eval_episodes",
@@ -266,22 +281,20 @@ def parse_args():
     parser.add_argument("--render", action="store_true")
     parser.add_argument("--actor_clip", type=float, default=None)
     parser.add_argument("--critic_clip", type=float, default=None)
-    parser.add_argument("--name", type=str, default="ddpg_run")
+    parser.add_argument("--name", type=str, default="sac_run")
     parser.add_argument("--actor_l2", type=float, default=0.0)
     parser.add_argument("--critic_l2", type=float, default=0.0)
+    parser.add_argument("--delay", type=int, default=2)
     parser.add_argument("--save_interval", type=int, default=10000)
     parser.add_argument("--verbosity", type=int, default=1)
-    parser.add_argument("--skip_save_to_disk", action="store_true")
-    parser.add_argument("--skip_log_to_disk", action="store_true")
     parser.add_argument("--gradient_updates_per_step", type=int, default=1)
     parser.add_argument("--prioritized_replay", action="store_true")
-    parser.add_argument("--buffer_size", type=int, default=1_000_000)
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    agent, env = run.load_env(args.env, "ddpg")
+    agent, env = run.load_env(args.env, "sac")
 
     if args.prioritized_replay:
         buffer_t = replay.PrioritizedReplayBuffer
@@ -290,7 +303,7 @@ if __name__ == "__main__":
     buffer = buffer_t(args.buffer_size)
 
     print(f"Using Device: {device}")
-    agent = ddpg(
+    agent = sac(
         agent,
         env,
         buffer,
@@ -301,10 +314,6 @@ if __name__ == "__main__":
         actor_lr=args.actor_lr,
         critic_lr=args.critic_lr,
         gamma=args.gamma,
-        sigma_start=args.sigma_start,
-        sigma_final=args.sigma_final,
-        sigma_anneal=args.sigma_anneal,
-        theta=args.theta,
         eval_interval=args.eval_interval,
         eval_episodes=args.eval_episodes,
         warmup_steps=args.warmup_steps,
@@ -312,11 +321,11 @@ if __name__ == "__main__":
         critic_clip=args.critic_clip,
         actor_l2=args.actor_l2,
         critic_l2=args.critic_l2,
+        alpha=args.alpha,
+        delay=args.delay,
         save_interval=args.save_interval,
-        render=args.render,
         name=args.name,
-        save_to_disk=not args.skip_save_to_disk,
-        log_to_disk=not args.skip_log_to_disk,
+        render=args.render,
         verbosity=args.verbosity,
         gradient_updates_per_step=args.gradient_updates_per_step,
     )
