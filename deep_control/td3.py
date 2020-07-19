@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 import tqdm
 
-from . import run, utils
+from . import replay, run, utils
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -17,6 +17,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def td3(
     agent,
     env,
+    buffer,
     num_steps=1_000_000,
     max_episode_steps=100_000,
     batch_size=64,
@@ -28,7 +29,6 @@ def td3(
     sigma_final=0.1,
     sigma_anneal=10_000,
     theta=0.15,
-    buffer_size=1_000_000,
     eval_interval=5000,
     eval_episodes=10,
     warmup_steps=1000,
@@ -66,7 +66,6 @@ def td3(
         theta=theta,
     )
 
-    buffer = utils.ReplayBuffer(buffer_size)
     critic1_optimizer = torch.optim.Adam(
         agent.critic1.parameters(), lr=critic_lr, weight_decay=critic_l2
     )
@@ -166,21 +165,21 @@ def _td3_learn(
     actor_clip,
     update_policy=True,
 ):
-    batch = buffer.sample(args.batch_size)
-    # batch will be None if not enough experience has been collected yet
-    if not batch:
-        return
+
+    per = isinstance(buffer, replay.PrioritizedReplayBuffer)
+    if per:
+        batch, imp_weights, priority_idxs = buffer.sample(args.batch_size)
+        imp_weights = imp_weights.to(device)
+    else:
+        batch = buffer.sample(args.batch_size)
 
     # prepare transitions for models
-    state_batch, action_batch, reward_batch, next_state_batch, done_batch = zip(*batch)
-
-    cat_tuple = lambda t: torch.cat(t).to(device)
-    list_to_tensor = lambda t: torch.tensor(t).unsqueeze(0).to(device)
-    state_batch = cat_tuple(state_batch)
-    next_state_batch = cat_tuple(next_state_batch)
-    action_batch = cat_tuple(action_batch)
-    reward_batch = list_to_tensor(reward_batch).T
-    done_batch = list_to_tensor(done_batch).T
+    state_batch, action_batch, reward_batch, next_state_batch, done_batch = batch
+    state_batch = state_batch.to(device)
+    next_state_batch = next_state_batch.to(device)
+    action_batch = action_batch.to(device)
+    reward_batch = reward_batch.to(device)
+    done_batch = done_batch.to(device)
 
     agent.train()
 
@@ -202,7 +201,11 @@ def _td3_learn(
 
     # update first critic
     agent_critic1_pred = agent.critic1(state_batch, action_batch)
-    critic1_loss = F.mse_loss(td_target, agent_critic1_pred)
+    td_error1 = td_target - agent_critic1_pred
+    if per:
+        critic1_loss = (imp_weights * 0.5 * (td_error1 ** 2)).mean()
+    else:
+        critic1_loss = 0.5 * (td_error1 ** 2).mean()
     critic1_optimizer.zero_grad()
     critic1_loss.backward()
     if critic_clip:
@@ -211,7 +214,11 @@ def _td3_learn(
 
     # update second critic
     agent_critic2_pred = agent.critic2(state_batch, action_batch)
-    critic2_loss = F.mse_loss(td_target, agent_critic2_pred)
+    td_error2 = td_target - agent_critic2_pred
+    if per:
+        critic2_loss = (imp_weights * 0.5 * (td_error2 ** 2)).mean()
+    else:
+        critic2_loss = 0.5 * (td_error2 ** 2).mean()
     critic2_optimizer.zero_grad()
     critic2_loss.backward()
     if critic_clip:
@@ -227,6 +234,10 @@ def _td3_learn(
         if actor_clip:
             torch.nn.utils.clip_grad_norm_(agent.actor.parameters(), actor_clip)
         actor_optimizer.step()
+
+    if per:
+        new_priorities = (abs(td_error1) + 1e-5).cpu().detach().squeeze(1).numpy()
+        buffer.update_priorities(priority_idxs, new_priorities)
 
 
 def parse_args():
@@ -278,9 +289,6 @@ def parse_args():
         help="sigma for Ornstein Uhlenbeck process computation",
     )
     parser.add_argument(
-        "--buffer_size", type=int, default=1000000, help="replay buffer size"
-    )
-    parser.add_argument(
         "--eval_interval",
         type=int,
         default=5000,
@@ -307,16 +315,26 @@ def parse_args():
     parser.add_argument("--c", type=float, default=0.5)
     parser.add_argument("--verbosity", type=int, default=1)
     parser.add_argument("--gradient_updates_per_step", type=int, default=1)
+    parser.add_argument("--prioritized_replay", action="store_true")
+    parser.add_argument("--buffer_size", type=int, default=1_000_000)
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
     agent, env = run.load_env(args.env, "td3")
+
+    if args.prioritized_replay:
+        buffer_t = replay.PrioritizedReplayBuffer
+    else:
+        buffer_t = replay.ReplayBuffer
+    buffer = buffer_t(args.buffer_size)
+
     print(f"Using Device: {device}")
     agent = td3(
         agent,
         env,
+        buffer,
         num_steps=args.num_steps,
         max_episode_steps=args.max_episode_steps,
         batch_size=args.batch_size,
@@ -328,7 +346,6 @@ if __name__ == "__main__":
         sigma_final=args.sigma_final,
         sigma_anneal=args.sigma_anneal,
         theta=args.theta,
-        buffer_size=args.buffer_size,
         eval_interval=args.eval_interval,
         eval_episodes=args.eval_episodes,
         warmup_steps=args.warmup_steps,

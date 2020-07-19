@@ -69,35 +69,6 @@ def evaluate_agent(
     return mean_return
 
 
-class ReplayBuffer:
-    def __init__(self, capacity):
-        self.capacity = capacity
-        self.memory = []
-        while len(self.memory) < self.capacity:
-            self.memory.append(None)
-        self.position = 0
-        self.max_filled = 0
-
-    def push(self, state, action, reward, next_state, done):
-        # pad batch axis
-        action = torch_and_pad(action)
-        reward = torch_and_pad(reward)
-        state = torch_and_pad(state)
-        next_state = torch_and_pad(next_state)
-        done = torch.tensor([int(done)])
-        self.memory[self.position] = Transition(state, action, reward, next_state, done)
-        self.position = (self.position + 1) % self.capacity
-        self.max_filled = min(self.max_filled + 1, self.capacity)
-
-    def sample(self, batch_size):
-        if self.max_filled < batch_size:
-            return None
-        return random.sample(self.memory[: self.max_filled], batch_size)
-
-    def __len__(self):
-        return len(self.memory)
-
-
 def mean(lst):
     return float(sum(lst)) / len(lst)
 
