@@ -30,6 +30,40 @@ def run(agent, env, episodes, max_steps, render=False, verbosity=1):
     return torch.tensor(episode_return_history)
 
 
+def collect_experience_by_steps(
+    agent, env, buffer, num_steps, current_state=None, current_done=None
+):
+    if not current_state:
+        state = env.reset()
+    if not current_done:
+        done = False
+    for step in num_steps:
+        if done:
+            state = env.reset()
+        action = agent.forward(state)
+        next_state, reward, done, info = env.step(action)
+        buffer.push(state, action, reward, next_state, done)
+        state = next_state
+    return state, done
+
+
+def collect_experience_by_rollouts(
+    agent, env, buffer, num_rollouts, max_rollout_length
+):
+    state = env.reset()
+    done = False
+    for rollout in range(num_rollouts):
+        step_num = 0
+        while not done:
+            action = agent.forward(state)
+            next_state, reward, done, info = env.step(action)
+            buffer.push(state, action, reward, next_state, done)
+            state = next_state
+            step_num += 1
+            if step_num >= max_rollout_length:
+                done = True
+
+
 def load_env(env_id, algo_type):
     env = gym.make(env_id)
     shape = (env.observation_space.shape[0], env.action_space.shape[0])
@@ -41,6 +75,25 @@ def load_env(env_id, algo_type):
     elif algo_type == "td3":
         agent = agents.TD3Agent(*shape, max_action)
     return agent, env
+
+
+def warmup_buffer(buffer, env, warmup_steps, max_episode_steps):
+    # use warmp up steps to add random transitions to the buffer
+    state = env.reset()
+    done = False
+    steps_this_ep = 0
+    for _ in range(warmup_steps):
+        if done:
+            state = env.reset()
+            steps_this_ep = 0
+            done = False
+        rand_action = env.action_space.sample()
+        next_state, reward, done, info = env.step(rand_action)
+        buffer.push(state, rand_action, reward, next_state, done)
+        state = next_state
+        steps_this_ep += 1
+        if steps_this_ep >= max_episode_steps:
+            done = True
 
 
 if __name__ == "__main__":

@@ -38,7 +38,7 @@ def ddpg(
     name="ddpg_run",
     actor_l2=0.0,
     critic_l2=0.0,
-    save_interval=10_000,
+    save_interval=100_000,
     log_to_disk=True,
     save_to_disk=True,
     verbosity=0,
@@ -79,7 +79,7 @@ def ddpg(
         # create tb writer, save hparams
         writer = tensorboardX.SummaryWriter(save_dir)
 
-    utils.warmup_buffer(buffer, env, warmup_steps, max_episode_steps)
+    run.warmup_buffer(buffer, env, warmup_steps, max_episode_steps)
 
     done = True
     learning_curve = []
@@ -269,7 +269,7 @@ def parse_args():
     parser.add_argument("--name", type=str, default="ddpg_run")
     parser.add_argument("--actor_l2", type=float, default=0.0)
     parser.add_argument("--critic_l2", type=float, default=0.0)
-    parser.add_argument("--save_interval", type=int, default=10000)
+    parser.add_argument("--save_interval", type=int, default=100_000)
     parser.add_argument("--verbosity", type=int, default=1)
     parser.add_argument("--skip_save_to_disk", action="store_true")
     parser.add_argument("--skip_log_to_disk", action="store_true")
