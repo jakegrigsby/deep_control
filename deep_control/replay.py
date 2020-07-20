@@ -222,6 +222,15 @@ class ReplayBufferStorage:
         done = self.done_stack[indices]
         return (state, action, reward, next_state, done)
 
+    def get_all_transitions(self):
+        return (
+            self.s_stack[: self._max_filled],
+            self.action_stack[: self._max_filled],
+            self.reward_stack[: self._max_filled],
+            self.s1_stack[: self._max_filled],
+            self.done_stack[: self._max_filled],
+        )
+
 
 class ReplayBuffer:
     def __init__(self, size):
@@ -241,6 +250,9 @@ class ReplayBuffer:
     def sample(self, batch_size):
         random_idxs = torch.randint(len(self._storage), (batch_size,))
         return self._storage[random_idxs]
+
+    def get_all_transitions(self):
+        return self._storage.get_all_transitions()
 
 
 class PrioritizedReplayBuffer(ReplayBuffer):
