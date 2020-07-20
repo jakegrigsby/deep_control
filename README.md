@@ -27,12 +27,6 @@ More results will be added in the future
 python -m deep_control.run --agent saves/my_ant_ddpg --env AntBulletEnv-v0 --render --episodes 100
 ```
 
-### Run Tests
-Install [pytest](https://docs.pytest.org/en/latest/)
-```bash
-pytest tests
-```
-
 ### References
 1) https://arxiv.org/pdf/1509.02971.pdf
 2) https://arxiv.org/pdf/1603.00748.pdf`
