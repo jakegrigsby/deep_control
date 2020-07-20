@@ -38,7 +38,7 @@ def td3(
     critic_l2=0.0,
     delay=2,
     target_noise_scale=0.2,
-    save_interval=10_000,
+    save_interval=100_000,
     c=0.5,
     name="td3_run",
     render=False,
@@ -82,7 +82,7 @@ def td3(
         # create tb writer, save hparams
         writer = tensorboardX.SummaryWriter(save_dir)
 
-    utils.warmup_buffer(buffer, env, warmup_steps, max_episode_steps)
+    run.warmup_buffer(buffer, env, warmup_steps, max_episode_steps)
 
     done = True
     learning_curve = []
@@ -311,12 +311,14 @@ def parse_args():
     parser.add_argument("--critic_l2", type=float, default=0.0)
     parser.add_argument("--delay", type=int, default=2)
     parser.add_argument("--target_noise_scale", type=float, default=0.2)
-    parser.add_argument("--save_interval", type=int, default=10000)
+    parser.add_argument("--save_interval", type=int, default=100_000)
     parser.add_argument("--c", type=float, default=0.5)
     parser.add_argument("--verbosity", type=int, default=1)
     parser.add_argument("--gradient_updates_per_step", type=int, default=1)
     parser.add_argument("--prioritized_replay", action="store_true")
     parser.add_argument("--buffer_size", type=int, default=1_000_000)
+    parser.add_argument("--skip_save_to_disk", action="store_true")
+    parser.add_argument("--skip_log_to_disk", action="store_true")
     return parser.parse_args()
 
 
@@ -361,4 +363,6 @@ if __name__ == "__main__":
         render=args.render,
         verbosity=args.verbosity,
         gradient_updates_per_step=args.gradient_updates_per_step,
+        save_to_disk=not args.skip_save_to_disk,
+        log_to_disk=not args.skip_log_to_disk,
     )

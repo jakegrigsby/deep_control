@@ -15,25 +15,6 @@ def clean_hparams_dict(hparams_dict):
     return {key: val for key, val in hparams_dict.items() if val}
 
 
-def warmup_buffer(buffer, env, warmup_steps, max_episode_steps):
-    # use warmp up steps to add random transitions to the buffer
-    state = env.reset()
-    done = False
-    steps_this_ep = 0
-    for _ in range(warmup_steps):
-        if done:
-            state = env.reset()
-            steps_this_ep = 0
-            done = False
-        rand_action = env.action_space.sample()
-        next_state, reward, done, info = env.step(rand_action)
-        buffer.push(state, rand_action, reward, next_state, done)
-        state = next_state
-        steps_this_ep += 1
-        if steps_this_ep >= max_episode_steps:
-            done = True
-
-
 class FlattenRoboticsDictWrapper(gym.Wrapper):
     def __init_(self, env):
         super().__init__(env)
