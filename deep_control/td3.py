@@ -108,7 +108,7 @@ def td3(
 
         update_policy = step % delay == 0
         for _ in range(gradient_updates_per_step):
-            _td3_learn(
+            td3_learn(
                 buffer,
                 target_agent,
                 agent,
@@ -149,7 +149,7 @@ def td3(
     return agent
 
 
-def _td3_learn(
+def td3_learn(
     buffer,
     target_agent,
     agent,

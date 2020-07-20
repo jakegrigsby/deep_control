@@ -95,7 +95,7 @@ def sac(
 
         update_policy = step % delay == 0
         for _ in range(gradient_updates_per_step):
-            _sac_learn(
+            sac_learn(
                 buffer=buffer,
                 target_agent=target_agent,
                 agent=agent,
@@ -134,7 +134,7 @@ def sac(
     return agent
 
 
-def _sac_learn(
+def sac_learn(
     buffer,
     target_agent,
     agent,

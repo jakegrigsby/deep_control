@@ -104,7 +104,7 @@ def ddpg(
             done = True
 
         for _ in range(gradient_updates_per_step):
-            _ddpg_learn(
+            ddpg_learn(
                 buffer=buffer,
                 target_agent=target_agent,
                 agent=agent,
@@ -135,7 +135,7 @@ def ddpg(
     return agent, learning_curve
 
 
-def _ddpg_learn(
+def ddpg_learn(
     buffer,
     target_agent,
     agent,
