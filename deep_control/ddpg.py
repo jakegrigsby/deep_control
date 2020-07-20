@@ -104,7 +104,7 @@ def ddpg(
             done = True
 
         for _ in range(gradient_updates_per_step):
-            ddpg_learn(
+            learn(
                 buffer=buffer,
                 target_agent=target_agent,
                 agent=agent,
@@ -135,7 +135,7 @@ def ddpg(
     return agent, learning_curve
 
 
-def ddpg_learn(
+def learn(
     buffer,
     target_agent,
     agent,
@@ -151,10 +151,10 @@ def ddpg_learn(
     """
     per = isinstance(buffer, replay.PrioritizedReplayBuffer)
     if per:
-        batch, imp_weights, priority_idxs = buffer.sample(args.batch_size)
+        batch, imp_weights, priority_idxs = buffer.sample(batch_size)
         imp_weights = imp_weights.to(device)
     else:
-        batch = buffer.sample(args.batch_size)
+        batch = buffer.sample(batch_size)
 
     # prepare transitions for models
     state_batch, action_batch, reward_batch, next_state_batch, done_batch = batch
@@ -170,9 +170,7 @@ def ddpg_learn(
     with torch.no_grad():
         target_action_s2 = target_agent.actor(next_state_batch)
         target_action_value_s2 = target_agent.critic(next_state_batch, target_action_s2)
-        td_target = (
-            reward_batch + args.gamma * (1.0 - done_batch) * target_action_value_s2
-        )
+        td_target = reward_batch + gamma * (1.0 - done_batch) * target_action_value_s2
 
     agent_critic_pred = agent.critic(state_batch, action_batch)
     td_error = td_target - agent_critic_pred
@@ -182,8 +180,8 @@ def ddpg_learn(
         critic_loss = 0.5 * (td_error ** 2).mean()
     critic_optimizer.zero_grad()
     critic_loss.backward()
-    if args.critic_clip:
-        torch.nn.utils.clip_grad_norm_(agent.critic.parameters(), args.critic_clip)
+    if critic_clip:
+        torch.nn.utils.clip_grad_norm_(agent.critic.parameters(), critic_clip)
     critic_optimizer.step()
 
     # actor update
@@ -191,8 +189,8 @@ def ddpg_learn(
     actor_loss = -agent.critic(state_batch, agent_actions).mean()
     actor_optimizer.zero_grad()
     actor_loss.backward()
-    if args.actor_clip:
-        torch.nn.utils.clip_grad_norm_(agent.actor.parameters(), args.actor_clip)
+    if actor_clip:
+        torch.nn.utils.clip_grad_norm_(agent.actor.parameters(), actor_clip)
     actor_optimizer.step()
 
     if per:

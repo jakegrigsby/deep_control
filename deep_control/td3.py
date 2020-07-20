@@ -108,7 +108,7 @@ def td3(
 
         update_policy = step % delay == 0
         for _ in range(gradient_updates_per_step):
-            td3_learn(
+            learn(
                 buffer,
                 target_agent,
                 agent,
@@ -149,7 +149,7 @@ def td3(
     return agent
 
 
-def td3_learn(
+def learn(
     buffer,
     target_agent,
     agent,
@@ -168,10 +168,10 @@ def td3_learn(
 
     per = isinstance(buffer, replay.PrioritizedReplayBuffer)
     if per:
-        batch, imp_weights, priority_idxs = buffer.sample(args.batch_size)
+        batch, imp_weights, priority_idxs = buffer.sample(batch_size)
         imp_weights = imp_weights.to(device)
     else:
-        batch = buffer.sample(args.batch_size)
+        batch = buffer.sample(batch_size)
 
     # prepare transitions for models
     state_batch, action_batch, reward_batch, next_state_batch, done_batch = batch

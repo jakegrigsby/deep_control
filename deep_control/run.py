@@ -33,11 +33,15 @@ def run(agent, env, episodes, max_steps, render=False, verbosity=1):
 def collect_experience_by_steps(
     agent, env, buffer, num_steps, current_state=None, current_done=None
 ):
-    if not current_state:
+    if current_state is None:
         state = env.reset()
-    if not current_done:
+    else:
+        state = current_state
+    if current_done is None:
         done = False
-    for step in num_steps:
+    else:
+        done = current_done
+    for step in range(num_steps):
         if done:
             state = env.reset()
         action = agent.forward(state)
