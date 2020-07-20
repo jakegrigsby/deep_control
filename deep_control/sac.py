@@ -284,7 +284,7 @@ def parse_args():
     parser.add_argument("--name", type=str, default="sac_run")
     parser.add_argument("--actor_l2", type=float, default=0.0)
     parser.add_argument("--critic_l2", type=float, default=0.0)
-    parser.add_argument("--delay", type=int, default=2)
+    parser.add_argument("--delay", type=int, default=1)
     parser.add_argument("--save_interval", type=int, default=10000)
     parser.add_argument("--verbosity", type=int, default=1)
     parser.add_argument("--gradient_updates_per_step", type=int, default=1)
