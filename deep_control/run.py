@@ -44,7 +44,7 @@ def collect_experience_by_steps(
     for step in range(num_steps):
         if done:
             state = env.reset()
-        action = agent.forward(state)
+        action = agent.collection_forward(state)
         next_state, reward, done, info = env.step(action)
         buffer.push(state, action, reward, next_state, done)
         state = next_state
@@ -59,7 +59,7 @@ def collect_experience_by_rollouts(
     for rollout in range(num_rollouts):
         step_num = 0
         while not done:
-            action = agent.forward(state)
+            action = agent.collection_forward(state)
             next_state, reward, done, info = env.step(action)
             buffer.push(state, action, reward, next_state, done)
             state = next_state

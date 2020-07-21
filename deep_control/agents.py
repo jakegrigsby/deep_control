@@ -42,6 +42,9 @@ class DDPGAgent:
         with torch.no_grad():
             action = self.actor(state)
         return np.squeeze(action.cpu().numpy(), 0)
+    
+    def collection_forward(self, state):
+        return self.forward(state)
 
     def process_state(self, state):
         return torch.from_numpy(np.expand_dims(state, 0).astype(np.float32)).to(
@@ -94,6 +97,9 @@ class TD3Agent:
             action = self.actor(state)
         return np.squeeze(action.cpu().numpy(), 0)
 
+    def collection_forward(self, state):
+        return self.forward(state)
+
     def process_state(self, state):
         return torch.from_numpy(np.expand_dims(state, 0).astype(np.float32)).to(
             utils.device
@@ -113,6 +119,10 @@ class SACAgent(TD3Agent):
         with torch.no_grad():
             act, _ = self.actor.forward(state, stochastic=False)
         return np.squeeze(act.cpu().numpy(), 0)
+
+    def collection_forward(self, state):
+        act, _ = self.stochastic_forward(state, process_states=True, track_gradients=False)
+        return act
 
     def stochastic_forward(self, state, process_states=False, track_gradients=True):
         if process_states:
