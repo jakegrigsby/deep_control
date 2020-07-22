@@ -234,7 +234,7 @@ def parse_args():
         "--env", type=str, default="Pendulum-v0", help="training environment"
     )
     parser.add_argument(
-        "--num_steps", type=int, default=10 ** 6, help="number of episodes for training"
+        "--num_steps", type=int, default=10 ** 6, help="number of steps in training"
     )
     parser.add_argument(
         "--max_episode_steps",

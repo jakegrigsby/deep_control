@@ -1,3 +1,1 @@
-from . import ddpg
-from . import sac
-from . import td3
+from . import ddpg, sac, td3
