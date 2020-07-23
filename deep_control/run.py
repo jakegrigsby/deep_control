@@ -54,9 +54,9 @@ def collect_experience_by_steps(
 def collect_experience_by_rollouts(
     agent, env, buffer, num_rollouts, max_rollout_length
 ):
-    state = env.reset()
-    done = False
     for rollout in range(num_rollouts):
+        state = env.reset()
+        done = False
         step_num = 0
         while not done:
             action = agent.collection_forward(state)
