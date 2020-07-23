@@ -41,15 +41,6 @@ def torch_and_pad(x):
     return torch.from_numpy(x.astype(np.float32)).unsqueeze(0)
 
 
-def evaluate_agent(
-    agent, env, eval_episodes, max_episode_steps, render=False, verbosity=0
-):
-    agent.eval()
-    returns = run.run(agent, env, eval_episodes, max_episode_steps, render, verbosity=0)
-    mean_return = returns.mean()
-    return mean_return
-
-
 def mean(lst):
     return float(sum(lst)) / len(lst)
 
@@ -62,10 +53,6 @@ def make_process_dirs(run_name, base_path="dc_saves"):
     base_dir += f"_{i}"
     os.makedirs(base_dir)
     return base_dir
-
-
-def exploration_noise(action, random_process, max_action):
-    return np.clip(action + random_process.sample(), -max_action, max_action)
 
 
 """
@@ -145,7 +132,7 @@ class OrnsteinUhlenbeckProcess(AnnealedGaussianProcess):
 
 
 class GaussianExplorationNoise:
-    def __init__(self, size, start_scale=0.1, final_scale=1.0, steps_annealed=1000):
+    def __init__(self, size, start_scale=1.0, final_scale=0.1, steps_annealed=1000):
         assert start_scale >= final_scale
         self.size = size
         self.start_scale = start_scale

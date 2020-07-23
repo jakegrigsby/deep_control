@@ -95,7 +95,7 @@ def ddpg(
             steps_this_ep = 0
             done = False
         action = agent.forward(state)
-        noisy_action = utils.exploration_noise(action, random_process, max_act)
+        noisy_action = run.exploration_noise(action, random_process, max_act)
         next_state, reward, done, info = env.step(noisy_action)
         buffer.push(state, noisy_action, reward, next_state, done)
         state = next_state
@@ -119,8 +119,8 @@ def ddpg(
             utils.soft_update(target_agent.actor, agent.actor, tau)
             utils.soft_update(target_agent.critic, agent.critic, tau)
 
-        if step % eval_interval == 0:
-            mean_return = utils.evaluate_agent(
+        if step % eval_interval == 0 or step == num_steps - 1:
+            mean_return = run.evaluate_agent(
                 agent, env, eval_episodes, max_episode_steps, render
             )
             if log_to_disk:

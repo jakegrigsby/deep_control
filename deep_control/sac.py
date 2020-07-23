@@ -117,8 +117,8 @@ def sac(
                 utils.soft_update(target_agent.critic1, agent.critic1, tau)
                 utils.soft_update(target_agent.critic2, agent.critic2, tau)
 
-        if step % eval_interval == 0:
-            mean_return = utils.evaluate_agent(
+        if step % eval_interval == 0 or step == num_steps - 1:
+            mean_return = run.evaluate_agent(
                 agent, env, eval_episodes, max_episode_steps, render
             )
             if log_to_disk:

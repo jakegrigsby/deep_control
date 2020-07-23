@@ -4,11 +4,12 @@ import gym
 import pybullet
 import pybullet_envs
 import torch
+import numpy as np
 
 from . import agents, utils
 
 
-def run(agent, env, episodes, max_steps, render=False, verbosity=1):
+def run_env(agent, env, episodes, max_steps, render=False, verbosity=1):
     episode_return_history = []
     if render:
         env.render()
@@ -30,8 +31,28 @@ def run(agent, env, episodes, max_steps, render=False, verbosity=1):
     return torch.tensor(episode_return_history)
 
 
+def exploration_noise(action, random_process, max_action):
+    return np.clip(action + random_process.sample(), -max_action, max_action)
+
+
+def evaluate_agent(
+    agent, env, eval_episodes, max_episode_steps, render=False, verbosity=0
+):
+    agent.eval()
+    returns = run_env(agent, env, eval_episodes, max_episode_steps, render, verbosity=0)
+    mean_return = returns.mean()
+    return mean_return
+
+
 def collect_experience_by_steps(
-    agent, env, buffer, num_steps, current_state=None, current_done=None
+    agent,
+    env,
+    buffer,
+    num_steps,
+    current_state=None,
+    current_done=None,
+    max_rollout_length=None,
+    random_process=None,
 ):
     if current_state is None:
         state = env.reset()
@@ -45,14 +66,18 @@ def collect_experience_by_steps(
         if done:
             state = env.reset()
         action = agent.collection_forward(state)
+        if random_process is not None:
+            action = exploration_noise(action, random_process, env.action_space.high[0])
         next_state, reward, done, info = env.step(action)
         buffer.push(state, action, reward, next_state, done)
         state = next_state
+        if max_rollout_length and step >= max_rollout_length:
+            done = True
     return state, done
 
 
 def collect_experience_by_rollouts(
-    agent, env, buffer, num_rollouts, max_rollout_length
+    agent, env, buffer, num_rollouts, max_rollout_length, random_process=None,
 ):
     for rollout in range(num_rollouts):
         state = env.reset()
@@ -60,6 +85,10 @@ def collect_experience_by_rollouts(
         step_num = 0
         while not done:
             action = agent.collection_forward(state)
+            if random_process is not None:
+                action = exploration_noise(
+                    action, random_process, env.action_space.high[0]
+                )
             next_state, reward, done, info = env.step(action)
             buffer.push(state, action, reward, next_state, done)
             state = next_state
@@ -112,4 +141,4 @@ if __name__ == "__main__":
 
     agent, env = load_env(args.env, args.algo)
     agent.load(args.agent)
-    run(agent, env, args.episodes, args.max_steps, args.render, verbosity=1)
+    run_env(agent, env, args.episodes, args.max_steps, args.render, verbosity=1)
