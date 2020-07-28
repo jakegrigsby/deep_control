@@ -302,7 +302,11 @@ if __name__ == "__main__":
         buffer_t = replay.PrioritizedReplayBuffer
     else:
         buffer_t = replay.ReplayBuffer
-    buffer = buffer_t(args.buffer_size)
+    buffer = buffer_t(
+        args.buffer_size,
+        state_shape=env.observation_space.shape,
+        action_shape=env.action_space.shape,
+    )
 
     print(f"Using Device: {device}")
     agent = sac(

@@ -186,13 +186,22 @@ class ReplayBufferStorage:
             num_samples = len(s)
         else:
             num_samples = 1
+            r, d = [r], [d]
 
-        # convert to torch tensors
-        s = torch.from_numpy(s).float()
-        a = torch.from_numpy(a).float()
-        r = torch.Tensor([r]).float()
-        s_1 = torch.from_numpy(s_1).float()
-        d = torch.Tensor([d]).int()
+        if not isinstance(s, torch.Tensor):
+            # convert to torch tensors
+            s = torch.from_numpy(s).float()
+            a = torch.from_numpy(a).float()
+            r = torch.Tensor(r).float()
+            s_1 = torch.from_numpy(s_1).float()
+            d = torch.Tensor(d).int()
+        else:
+            # move to cpu
+            s = s.cpu()
+            a = a.cpu()
+            r = r.cpu()
+            s_1 = s_1.cpu()
+            d = d.int().cpu()
 
         # Store at end of buffer. Wrap around if past end.
         R = np.arange(self._next_idx, self._next_idx + num_samples) % self.size
@@ -233,9 +242,13 @@ class ReplayBufferStorage:
 
 
 class ReplayBuffer:
-    def __init__(self, size):
+    def __init__(self, size, state_shape=None, action_shape=None):
         self._storage = None
         self._maxsize = size
+        self.state_shape = state_shape
+        self.action_shape = action_shape
+        assert self.state_shape, "Must provide shape of state space to ReplayBuffer"
+        assert self.action_shape, "Must provide shape of action space to ReplayBuffer"
 
     def __len__(self):
         return len(self._storage)
@@ -243,7 +256,9 @@ class ReplayBuffer:
     def push(self, state, action, reward, next_state, done):
         if not self._storage:
             self._storage = ReplayBufferStorage(
-                self._maxsize, obs_shape=state.shape, action_shape=action.shape,
+                self._maxsize,
+                obs_shape=self.state_shape,
+                action_shape=self.action_shape,
             )
         return self._storage.add(state, action, reward, next_state, done)
 
@@ -256,8 +271,8 @@ class ReplayBuffer:
 
 
 class PrioritizedReplayBuffer(ReplayBuffer):
-    def __init__(self, size, alpha=0.6, beta=1.0):
-        super(PrioritizedReplayBuffer, self).__init__(size)
+    def __init__(self, size, state_shape, action_shape, alpha=0.6, beta=1.0):
+        super(PrioritizedReplayBuffer, self).__init__(size, state_shape, action_shape)
         assert alpha >= 0
         self.alpha = alpha
         self.beta = beta
@@ -272,7 +287,7 @@ class PrioritizedReplayBuffer(ReplayBuffer):
 
     def push(self, s, a, r, s_1, d, priorities=None):
         R = super().push(s, a, r, s_1, d)
-        if not priorities:
+        if priorities is None:
             priorities = self._max_priority
         self._it_sum[R] = priorities ** self.alpha
         self._it_min[R] = priorities ** self.alpha
