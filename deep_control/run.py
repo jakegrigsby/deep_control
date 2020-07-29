@@ -62,16 +62,23 @@ def collect_experience_by_steps(
         done = False
     else:
         done = current_done
+
+    steps_this_ep = 0
     for step in range(num_steps):
         if done:
             state = env.reset()
+            steps_this_ep = 0
+
+        # collect a new transition
         action = agent.collection_forward(state)
         if random_process is not None:
             action = exploration_noise(action, random_process, env.action_space.high[0])
         next_state, reward, done, info = env.step(action)
         buffer.push(state, action, reward, next_state, done)
         state = next_state
-        if max_rollout_length and step >= max_rollout_length:
+
+        steps_this_ep += 1
+        if max_rollout_length and steps_this_ep >= max_rollout_length:
             done = True
     return state, done
 
