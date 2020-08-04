@@ -45,7 +45,7 @@ def mean(lst):
     return float(sum(lst)) / len(lst)
 
 
-def make_process_dirs(run_name, base_path="dc_saves"):
+def make_process_dirs(run_name, base_path='dc_saves'):
     base_dir = os.path.join(base_path, run_name)
     i = 0
     while os.path.exists(base_dir + f"_{i}"):

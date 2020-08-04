@@ -13,11 +13,10 @@ declare -a EnvList=("InvertedPendulumPyBulletEnv-v0" \
     "HumanoidPyBulletEnv-v0" \
     "HumanoidFlagrunPyBulletEnv-v0" \
     "HumanoidFlagrunHarderPyBulletEnv-v0" \
-    "AtlasPyBulletEnv-v0" \
     "PusherPyBulletEnv-v0" \
-    "ThrowerPyBulletEnv-v0" \
     "StrikerPyBulletEnv-v0")
 
 for env in "${EnvList[@]}"; do
+    echo Training on env: $env
     python -m deep_control.$1 --env $env --name $1_$env
 done

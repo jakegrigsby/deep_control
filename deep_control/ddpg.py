@@ -213,7 +213,7 @@ def parse_args():
         help="maximum steps per episode",
     )
     parser.add_argument(
-        "--batch_size", type=int, default=64, help="training batch size"
+        "--batch_size", type=int, default=256, help="training batch size"
     )
     parser.add_argument(
         "--tau", type=float, default=0.005, help="for model parameter % update"
@@ -231,7 +231,7 @@ def parse_args():
     parser.add_argument(
         "--sigma_anneal",
         type=float,
-        default=100000,
+        default=100_000,
         help="How many steps to anneal sigma over.",
     )
     parser.add_argument(

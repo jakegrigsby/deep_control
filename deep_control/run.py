@@ -2,7 +2,7 @@ import argparse
 
 import gym
 import pybullet
-import pybullet_envs
+import pybulletgym
 import torch
 import numpy as np
 
