@@ -149,6 +149,16 @@ class PixelTD3Agent(TD3Agent):
         self.max_act = max_action
 
 
+class PixelSACAgent(SACAgent):
+    def __init__(self, obs_space_shape, act_space_size, max_action):
+        self.actor = nets.StochasticPixelActor(
+            obs_space_shape, act_space_size, max_action
+        )
+        self.critic1 = nets.BaselinePixelCritic(obs_space_shape, act_space_size)
+        self.critic2 = nets.BaselinePixelCritic(obs_space_shape, act_space_size)
+        self.max_act = max_action
+
+
 class PixelDDPGAgent(DDPGAgent):
     def __init__(self, obs_space_shape, act_space_size, max_action):
         self.actor = nets.BaselinePixelActor(

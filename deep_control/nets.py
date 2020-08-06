@@ -141,3 +141,56 @@ class StochasticActor(nn.Module):
             logp_a = logp_a.unsqueeze(1)
             act = self.max_act * torch.tanh(unsquashed_act)
         return act, logp_a
+
+
+class StochasticPixelActor(nn.Module):
+    def __init__(self, obs_shape, action_size, max_action):
+        super().__init__()
+        assert len(obs_shape) == 3
+        channels = obs_shape[0]
+        self.conv1 = nn.Conv2d(channels, 32, kernel_size=3, stride=2)
+        self.conv2 = nn.Conv2d(32, 32, kernel_size=3, stride=2)
+        self.conv3 = nn.Conv2d(32, 32, kernel_size=3, stride=1)
+
+        output_height, output_width = utils.compute_conv_output(
+            utils.compute_conv_output(
+                utils.compute_conv_output(
+                    obs_shape[1:], kernel_size=(3, 3), stride=(2, 2)
+                ),
+                kernel_size=(3, 3),
+                stride=(2, 2),
+            ),
+            kernel_size=(3, 3),
+            stride=(1, 1),
+        )
+        self.fc1 = nn.Linear(output_height * output_width * 32, 200)
+        self.fc2 = nn.Linear(200, 200)
+        self.mu = nn.Linear(200, action_size)
+        self.log_std = nn.Linear(200, action_size)
+        self.max_act = max_action
+
+    def forward(self, state, stochastic=False):
+        state = state / 255.0
+        x = F.relu(self.conv1(state))
+        x = F.relu(self.conv2(x))
+        x = F.relu(self.conv3(x))
+        # flatten
+        x = x.view(x.size(0), -1)
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        mu = self.mu(x)
+        log_std = self.log_std(x)
+        if not stochastic:
+            act = self.max_act * torch.tanh(mu)
+            logp_a = None
+        else:
+            std = torch.exp(torch.clamp(log_std, -20, 2))
+            dist = Normal(mu, std)
+            unsquashed_act = dist.rsample()
+            logp_a = dist.log_prob(unsquashed_act).sum(axis=-1)
+            logp_a -= (
+                2 * (np.log(2) - unsquashed_act - F.softplus(-2 * unsquashed_act))
+            ).sum(axis=1)
+            logp_a = logp_a.unsqueeze(1)
+            act = self.max_act * torch.tanh(unsquashed_act)
+        return act, logp_a

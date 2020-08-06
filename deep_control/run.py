@@ -142,7 +142,7 @@ def load_env(env_id, algo_type):
         if algo_type == "ddpg":
             agent = agents.PixelDDPGAgent(obs_shape, action_shape, max_action)
         elif algo_type == "sac":
-            raise NotImplementedError("Pixel SAC not yet implemented")
+            agent = agents.PixelSACAgent(obs_shape, action_shape, max_action)
         elif algo_type == "td3":
             agent = agents.PixelTD3Agent(obs_shape, action_shape, max_action)
     return agent, env
