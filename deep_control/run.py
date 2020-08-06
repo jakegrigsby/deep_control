@@ -1,10 +1,10 @@
 import argparse
 
 import gym
+import numpy as np
 import pybullet
 import pybulletgym
 import torch
-import numpy as np
 
 from . import agents, utils
 
@@ -103,18 +103,23 @@ def collect_experience_by_rollouts(
             if step_num >= max_rollout_length:
                 done = True
 
+
 class ChannelsFirstWrapper(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
-        self.observation_space.shape = (env.observation_space.shape[-1],) +  env.observation_space.shape[:-1]
+        self.observation_space.shape = (
+            env.observation_space.shape[-1],
+        ) + env.observation_space.shape[:-1]
 
     def observation(self, frame):
-        return np.transpose(frame, (2, 0, 1))
+        frame = np.transpose(frame, (2, 0, 1))
+        return frame - np.zeros_like(frame)
+
 
 def load_env(env_id, algo_type):
     env = gym.make(env_id)
     shape = (env.observation_space.shape[0], env.action_space.shape[0])
-    
+
     # decide if we are learning from state or pixels
     if len(env.observation_space.shape) > 1:
         from_state = False
@@ -139,7 +144,7 @@ def load_env(env_id, algo_type):
         elif algo_type == "sac":
             raise NotImplementedError("Pixel SAC not yet implemented")
         elif algo_type == "td3":
-            agent = agent.PixelTD3Agent(obs_shape, action_shape, max_action)
+            agent = agents.PixelTD3Agent(obs_shape, action_shape, max_action)
     return agent, env
 
 
@@ -155,7 +160,6 @@ def warmup_buffer(buffer, env, warmup_steps, max_episode_steps):
             done = False
         rand_action = env.action_space.sample()
         next_state, reward, done, info = env.step(rand_action)
-        breakpoint()
         buffer.push(state, rand_action, reward, next_state, done)
         state = next_state
         steps_this_ep += 1
