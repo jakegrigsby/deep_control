@@ -20,10 +20,11 @@ def sac(
     buffer,
     num_steps=1_000_000,
     max_episode_steps=100_000,
-    batch_size=64,
+    batch_size=256,
     tau=0.005,
     actor_lr=1e-4,
     critic_lr=1e-3,
+    alpha_lr=1e-4,
     gamma=0.99,
     eval_interval=5000,
     eval_episodes=10,
@@ -40,7 +41,7 @@ def sac(
     log_to_disk=True,
     verbosity=0,
     gradient_updates_per_step=1,
-    alpha=0.2,
+    init_alpha=0.1,
 ):
 
     agent.to(device)
@@ -62,6 +63,11 @@ def sac(
     actor_optimizer = torch.optim.Adam(
         agent.actor.parameters(), lr=actor_lr, weight_decay=actor_l2
     )
+
+    alpha = torch.Tensor([init_alpha]).to(device)
+    alpha.requires_grad = True
+
+    alpha_optimizer = torch.optim.Adam([alpha], lr=alpha_lr)
 
     if save_to_disk or log_to_disk:
         save_dir = utils.make_process_dirs(name)
@@ -102,9 +108,10 @@ def sac(
                 actor_optimizer=actor_optimizer,
                 critic1_optimizer=critic1_optimizer,
                 critic2_optimizer=critic2_optimizer,
-                max_act=env.action_space.high[0],
-                batch_size=batch_size,
                 alpha=alpha,
+                alpha_optimizer=alpha_optimizer,
+                target_alpha=-env.action_space.shape[0],  # target_alpha = -|A|
+                batch_size=batch_size,
                 gamma=gamma,
                 critic_clip=critic_clip,
                 actor_clip=actor_clip,
@@ -141,7 +148,8 @@ def learn(
     actor_optimizer,
     critic1_optimizer,
     critic2_optimizer,
-    max_act,
+    alpha_optimizer,
+    target_alpha,
     batch_size,
     alpha,
     gamma,
@@ -215,13 +223,19 @@ def learn(
                 agent.critic1(state_batch, agent_actions),
                 agent.critic2(state_batch, agent_actions),
             )
-            - (alpha * logp_a)
+            - (alpha.detach() * logp_a)
         ).mean()
         actor_optimizer.zero_grad()
         actor_loss.backward()
         if actor_clip:
             torch.nn.utils.clip_grad_norm_(agent.actor.parameters(), actor_clip)
         actor_optimizer.step()
+
+        # alpha update
+        alpha_loss = -(alpha * (logp_a + target_alpha).detach()).mean()
+        alpha_optimizer.zero_grad()
+        alpha_loss.backward()
+        alpha_optimizer.step()
 
     if per:
         new_priorities = (abs(td_error1) + 1e-5).cpu().detach().squeeze(1).numpy()
@@ -258,7 +272,16 @@ def parse_args():
         "--gamma", type=float, default=0.99, help="gamma, the discount factor"
     )
     parser.add_argument(
-        "--alpha", type=float, default=0.2, help="Entropy regularization coefficeint."
+        "--init_alpha",
+        type=float,
+        default=0.1,
+        help="initial entropy regularization coefficeint.",
+    )
+    parser.add_argument(
+        "--alpha_lr",
+        type=float,
+        default=1e-4,
+        help="alpha (entropy regularization coefficeint) learning rate",
     )
     parser.add_argument(
         "--buffer_size", type=int, default=1_000_000, help="replay buffer size"
@@ -327,7 +350,8 @@ if __name__ == "__main__":
         critic_clip=args.critic_clip,
         actor_l2=args.actor_l2,
         critic_l2=args.critic_l2,
-        alpha=args.alpha,
+        init_alpha=args.init_alpha,
+        alpha_lr=args.alpha_lr,
         delay=args.delay,
         save_interval=args.save_interval,
         name=args.name,
