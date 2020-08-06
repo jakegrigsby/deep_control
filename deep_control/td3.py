@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 import tqdm
 
-from . import replay, run, utils
+from . import envs, replay, run, utils
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -324,7 +324,7 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    agent, env = run.load_env(args.env, "td3")
+    agent, env = envs.load_env(args.env, "td3")
 
     if args.prioritized_replay:
         buffer_t = replay.PrioritizedReplayBuffer
