@@ -137,3 +137,19 @@ class SACAgent(TD3Agent):
         if process_states:
             act = np.squeeze(act.cpu().numpy(), 0)
         return act, logp_a
+
+class PixelTD3Agent(TD3Agent):
+    def __init__(self, obs_space_shape, act_space_size, max_action):
+        self.actor = nets.BaselinePixelActor(obs_space_size, act_space_size, max_action)
+        self.critic1 = nets.BaselinePixelCritic(obs_space_shape, act_space_size)
+        self.critic2 = nets.BaselinePixelCritic(obs_space_shape, act_space_size)
+        self.max_act = max_action
+
+class PixelDDPGAgent(DDPGAgent):
+    def __init__(self, obs_space_shape, act_space_size, max_action):
+        self.actor = nets.BaselinePixelActor(obs_space_shape, act_space_size, max_action)
+        self.critic = nets.BaselinePixelCritic(obs_space_shape, act_space_size)
+        self.max_act = max_action
+
+
+

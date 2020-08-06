@@ -103,17 +103,43 @@ def collect_experience_by_rollouts(
             if step_num >= max_rollout_length:
                 done = True
 
+class ChannelsFirstWrapper(gym.ObservationWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.observation_space.shape = (env.observation_space.shape[-1],) +  env.observation_space.shape[:-1]
+
+    def observation(self, frame):
+        return np.transpose(frame, (2, 0, 1))
 
 def load_env(env_id, algo_type):
     env = gym.make(env_id)
     shape = (env.observation_space.shape[0], env.action_space.shape[0])
+    
+    # decide if we are learning from state or pixels
+    if len(env.observation_space.shape) > 1:
+        from_state = False
+        env = ChannelsFirstWrapper(env)
+        obs_shape = env.observation_space.shape
+    else:
+        from_state = True
+        obs_shape = env.observation_space.shape[0]
+    action_shape = env.action_space.shape[0]
     max_action = env.action_space.high[0]
-    if algo_type == "ddpg":
-        agent = agents.DDPGAgent(*shape, max_action)
-    elif algo_type == "sac":
-        agent = agents.SACAgent(*shape, max_action)
-    elif algo_type == "td3":
-        agent = agents.TD3Agent(*shape, max_action)
+
+    if from_state:
+        if algo_type == "ddpg":
+            agent = agents.DDPGAgent(obs_shape, action_shape, max_action)
+        elif algo_type == "sac":
+            agent = agents.SACAgent(obs_shape, action_shape, max_action)
+        elif algo_type == "td3":
+            agent = agents.TD3Agent(obs_shape, action_shape, max_action)
+    else:
+        if algo_type == "ddpg":
+            agent = agents.PixelDDPGAgent(obs_shape, action_shape, max_action)
+        elif algo_type == "sac":
+            raise NotImplementedError("Pixel SAC not yet implemented")
+        elif algo_type == "td3":
+            agent = agent.PixelTD3Agent(obs_shape, action_shape, max_action)
     return agent, env
 
 
@@ -129,6 +155,7 @@ def warmup_buffer(buffer, env, warmup_steps, max_episode_steps):
             done = False
         rand_action = env.action_space.sample()
         next_state, reward, done, info = env.step(rand_action)
+        breakpoint()
         buffer.push(state, rand_action, reward, next_state, done)
         state = next_state
         steps_this_ep += 1
