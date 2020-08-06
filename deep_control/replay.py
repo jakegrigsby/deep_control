@@ -188,6 +188,7 @@ class ReplayBufferStorage:
     def add(self, s, a, r, s_1, d):
         # this buffer supports batched experience
         if len(s.shape) > len(self.obs_shape):
+            # there must be a batch dimension
             num_samples = len(s)
         else:
             num_samples = 1
@@ -202,7 +203,7 @@ class ReplayBufferStorage:
             d = torch.Tensor(d).int()
 
             if self.s_dtype is torch.float32:
-                # make sure stats aren't Doubles
+                # make sure states aren't Doubles
                 s = s.float()
                 s_1 = s_1.float()
         else:
@@ -234,6 +235,9 @@ class ReplayBufferStorage:
             raise IndexError(
                 "ReplayBufferStorage getitem called with indices object that is not iterable"
             )
+
+        # converting states to float here instead of inside the learning loop
+        # of each agent seems fine for now.
         state = self.s_stack[indices].float()
         action = self.action_stack[indices]
         reward = self.reward_stack[indices]

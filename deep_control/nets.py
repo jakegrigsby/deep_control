@@ -16,6 +16,8 @@ class BaselinePixelActor(nn.Module):
         self.conv2 = nn.Conv2d(32, 32, kernel_size=3, stride=2)
         self.conv3 = nn.Conv2d(32, 32, kernel_size=3, stride=1)
 
+        # this should adjust the size of the first FC layer to work
+        # with almost any image size (including non-square)
         output_height, output_width = utils.compute_conv_output(
             utils.compute_conv_output(
                 utils.compute_conv_output(

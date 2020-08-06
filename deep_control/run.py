@@ -105,6 +105,12 @@ def collect_experience_by_rollouts(
 
 
 class ChannelsFirstWrapper(gym.ObservationWrapper):
+    """
+    Some pixel-based gym environments use a (Height, Width, Channel) image format.
+    This wrapper rolls those axes to (Channel, Height, Width) to work with pytorch
+    Conv2D layers.
+    """
+
     def __init__(self, env):
         super().__init__(env)
         self.observation_space.shape = (
@@ -113,6 +119,7 @@ class ChannelsFirstWrapper(gym.ObservationWrapper):
 
     def observation(self, frame):
         frame = np.transpose(frame, (2, 0, 1))
+        # this is a trick to make numpy put this array in contiguous memory
         return frame - np.zeros_like(frame)
 
 
@@ -123,7 +130,9 @@ def load_env(env_id, algo_type):
     # decide if we are learning from state or pixels
     if len(env.observation_space.shape) > 1:
         from_state = False
-        env = ChannelsFirstWrapper(env)
+        if env.observation_space.shape[0] > env.observation_space.shape[-1]:
+            # assume channels-last env and wrap to channels-first
+            env = ChannelsFirstWrapper(env)
         obs_shape = env.observation_space.shape
     else:
         from_state = True
