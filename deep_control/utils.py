@@ -1,3 +1,4 @@
+import math
 import os
 import random
 from collections import namedtuple
@@ -53,6 +54,32 @@ def make_process_dirs(run_name, base_path="dc_saves"):
     base_dir += f"_{i}"
     os.makedirs(base_dir)
     return base_dir
+
+
+def compute_conv_output(
+    inp_shape, kernel_size, padding=(0, 0), dilation=(1, 1), stride=(1, 1)
+):
+    """
+    Compute the shape of the output of a torch Conv2d layer using 
+    the formula from the docs.
+
+    every argument is a tuple corresponding to (height, width), e.g. kernel_size=(3, 4)
+    """
+    height_out = math.floor(
+        (
+            (inp_shape[0] + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1)
+            / stride[0]
+        )
+        + 1
+    )
+    width_out = math.floor(
+        (
+            (inp_shape[1] + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1)
+            / stride[1]
+        )
+        + 1
+    )
+    return height_out, width_out
 
 
 """

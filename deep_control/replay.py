@@ -167,12 +167,17 @@ class MinSegmentTree(SegmentTree):
 
 class ReplayBufferStorage:
     def __init__(self, size, obs_shape, action_shape):
-        self.s_stack = torch.zeros((size,) + obs_shape, dtype=torch.float32)
+        if len(obs_shape) > 1:
+            self.s_dtype = torch.uint8
+        else:
+            self.s_dtype = torch.float32
+        self.s_stack = torch.zeros((size,) + obs_shape, dtype=self.s_dtype)
         self.action_stack = torch.zeros((size,) + action_shape, dtype=torch.float32)
         self.reward_stack = torch.zeros((size, 1), dtype=torch.float32)
-        self.s1_stack = torch.zeros((size,) + obs_shape, dtype=torch.float32)
+        self.s1_stack = torch.zeros((size,) + obs_shape, dtype=self.s_dtype)
         self.done_stack = torch.zeros((size, 1), dtype=torch.int)
 
+        self.obs_shape = obs_shape
         self.size = size
         self._next_idx = 0
         self._max_filled = 0
@@ -182,7 +187,8 @@ class ReplayBufferStorage:
 
     def add(self, s, a, r, s_1, d):
         # this buffer supports batched experience
-        if len(s.shape) > 1:
+        if len(s.shape) > len(self.obs_shape):
+            # there must be a batch dimension
             num_samples = len(s)
         else:
             num_samples = 1
@@ -190,11 +196,16 @@ class ReplayBufferStorage:
 
         if not isinstance(s, torch.Tensor):
             # convert to torch tensors
-            s = torch.from_numpy(s).float()
+            s = torch.from_numpy(s)
             a = torch.from_numpy(a).float()
             r = torch.Tensor(r).float()
-            s_1 = torch.from_numpy(s_1).float()
+            s_1 = torch.from_numpy(s_1)
             d = torch.Tensor(d).int()
+
+            if self.s_dtype is torch.float32:
+                # make sure states aren't Doubles
+                s = s.float()
+                s_1 = s_1.float()
         else:
             # move to cpu
             s = s.cpu()
@@ -224,10 +235,13 @@ class ReplayBufferStorage:
             raise IndexError(
                 "ReplayBufferStorage getitem called with indices object that is not iterable"
             )
-        state = self.s_stack[indices]
+
+        # converting states to float here instead of inside the learning loop
+        # of each agent seems fine for now.
+        state = self.s_stack[indices].float()
         action = self.action_stack[indices]
         reward = self.reward_stack[indices]
-        next_state = self.s1_stack[indices]
+        next_state = self.s1_stack[indices].float()
         done = self.done_stack[indices]
         return (state, action, reward, next_state, done)
 
