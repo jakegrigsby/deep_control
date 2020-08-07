@@ -1,6 +1,7 @@
 import argparse
 import copy
 import time
+import math
 
 import gym
 import numpy as np
@@ -64,10 +65,10 @@ def sac(
         agent.actor.parameters(), lr=actor_lr, weight_decay=actor_l2
     )
 
-    alpha = torch.Tensor([init_alpha]).to(device)
-    alpha.requires_grad = True
+    log_alpha = torch.Tensor([math.log(init_alpha)]).to(device)
+    log_alpha.requires_grad = True
 
-    alpha_optimizer = torch.optim.Adam([alpha], lr=alpha_lr)
+    log_alpha_optimizer = torch.optim.Adam([log_alpha], lr=alpha_lr)
 
     if save_to_disk or log_to_disk:
         save_dir = utils.make_process_dirs(name)
@@ -108,9 +109,9 @@ def sac(
                 actor_optimizer=actor_optimizer,
                 critic1_optimizer=critic1_optimizer,
                 critic2_optimizer=critic2_optimizer,
-                alpha=alpha,
-                alpha_optimizer=alpha_optimizer,
-                target_alpha=-env.action_space.shape[0],  # target_alpha = -|A|
+                log_alpha=log_alpha,
+                log_alpha_optimizer=log_alpha_optimizer,
+                target_entropy=-env.action_space.shape[0],  # target_entropy = -|A|
                 batch_size=batch_size,
                 gamma=gamma,
                 critic_clip=critic_clip,
@@ -148,10 +149,10 @@ def learn(
     actor_optimizer,
     critic1_optimizer,
     critic2_optimizer,
-    alpha_optimizer,
-    target_alpha,
+    log_alpha_optimizer,
+    target_entropy,
     batch_size,
-    alpha,
+    log_alpha,
     gamma,
     critic_clip,
     actor_clip,
@@ -174,6 +175,7 @@ def learn(
 
     agent.train()
 
+    alpha = torch.exp(log_alpha)
     with torch.no_grad():
         # create critic targets (clipped double Q learning)
         action_s2, logp_a2 = agent.stochastic_forward(
@@ -232,10 +234,10 @@ def learn(
         actor_optimizer.step()
 
         # alpha update
-        alpha_loss = -(alpha * (logp_a + target_alpha).detach()).mean()
-        alpha_optimizer.zero_grad()
+        alpha_loss = (-alpha * (logp_a + target_entropy).detach()).mean()
+        log_alpha_optimizer.zero_grad()
         alpha_loss.backward()
-        alpha_optimizer.step()
+        log_alpha_optimizer.step()
 
     if per:
         new_priorities = (abs(td_error1) + 1e-5).cpu().detach().squeeze(1).numpy()
