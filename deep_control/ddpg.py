@@ -198,11 +198,7 @@ def learn(
         buffer.update_priorities(priority_idxs, new_priorities)
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Train agent with DDPG")
-    parser.add_argument(
-        "--env", type=str, default="Pendulum-v0", help="training environment"
-    )
+def add_args(parser):
     parser.add_argument(
         "--num_steps", type=int, default=1000000, help="number of training steps"
     )
@@ -274,11 +270,15 @@ def parse_args():
     parser.add_argument("--gradient_updates_per_step", type=int, default=1)
     parser.add_argument("--prioritized_replay", action="store_true")
     parser.add_argument("--buffer_size", type=int, default=1_000_000)
-    return parser.parse_args()
 
 
 if __name__ == "__main__":
-    args = parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--env", type=str, default="Pendulum-v0", help="Training environment gym id"
+    )
+    add_args(parser)
+    args = parser.parse_args()
     agent, env = envs.load_env(args.env, "ddpg")
 
     if args.prioritized_replay:

@@ -244,11 +244,7 @@ def learn(
         buffer.update_priorities(priority_idxs, new_priorities)
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Train agent with SAC")
-    parser.add_argument(
-        "--env", type=str, default="Pendulum-v0", help="training environment"
-    )
+def add_args(parser):
     parser.add_argument(
         "--num_steps", type=int, default=10 ** 6, help="number of steps in training"
     )
@@ -316,11 +312,15 @@ def parse_args():
     parser.add_argument("--prioritized_replay", action="store_true")
     parser.add_argument("--skip_save_to_disk", action="store_true")
     parser.add_argument("--skip_log_to_disk", action="store_true")
-    return parser.parse_args()
 
 
 if __name__ == "__main__":
-    args = parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--env", type=str, default="Pendulum-v0", help="Training environment gym id"
+    )
+    add_args(parser)
+    args = parser.parse_args()
     agent, env = envs.load_env(args.env, "sac")
 
     if args.prioritized_replay:
