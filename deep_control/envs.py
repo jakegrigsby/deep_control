@@ -1,3 +1,6 @@
+import argparse
+import random
+
 import gym
 import numpy as np
 
@@ -45,8 +48,78 @@ class GoalBasedWrapper(gym.ObservationWrapper):
         return np.concatenate((obs_dict["observation"], obs_dict["desired_goal"]))
 
 
+def add_gym_args(parser):
+    """
+    Add a --env cl flag to an argparser
+    """
+    parser.add_argument("--env", type=str, default="Pendulum-v0")
+
+
+def load_gym(env_id):
+    """
+    Load an environment from OpenAI gym (or pybullet_gym, if installed)
+    """
+    # optional pybullet import
+    try:
+        import pybullet
+        import pybullet_gym
+    except ImportError:
+        pass
+    return gym.make(env_id)
+
+
+def add_dmc_args(parser):
+    """
+    Add cl flags associated with the deepmind control suite to a parser
+    """
+    parser.add_argument("--domain_name", type=str, default="fish")
+    parser.add_argument("--task_name", type=str, default="swim")
+    parser.add_argument("--from_pixels", action="store_true")
+    parser.add_argument("--height", type=int, default=84)
+    parser.add_argument("--width", type=int, default=84)
+    parser.add_argument("--camera_id", type=int, default=0)
+    parser.add_argument("--frame_skip", type=int, default=1)
+    parser.add_argument("--channels_last", action="store_true")
+
+
+def load_dmc(
+    domain_name,
+    task_name,
+    seed=None,
+    from_pixels=False,
+    height=84,
+    width=84,
+    camera_id=0,
+    frame_skip=1,
+    channels_last=False,
+    **kwargs
+):
+    """
+    Load a task from the deepmind control suite. 
+
+    Uses dmc2gym (https://github.com/denisyarats/dmc2gym)
+
+    Note that setting seed=None (the default) picks a random seed
+    """
+    import dmc2gym
+
+    if seed is None:
+        seed = random.randint(1, 100)
+    return dmc2gym.make(
+        domain_name=domain_name,
+        task_name=task_name,
+        from_pixels=from_pixels,
+        height=height,
+        width=width,
+        camera_id=camera_id,
+        visualize_reward=False,
+        frame_skip=frame_skip,
+        channels_first=not channels_last,
+    )
+
+
 def load_env(env_id, algo_type):
-    env = gym.make(env_id)
+    env = load_gym(env_id)
 
     # decide if env is a goal based (dict) env
     if isinstance(env.observation_space, gym.spaces.dict.Dict):

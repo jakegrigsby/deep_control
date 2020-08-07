@@ -43,6 +43,7 @@ def sac(
     verbosity=0,
     gradient_updates_per_step=1,
     init_alpha=0.1,
+    **kwargs,
 ):
 
     agent.to(device)
