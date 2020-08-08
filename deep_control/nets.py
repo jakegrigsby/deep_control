@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from torch.distributions.normal import Normal
+from torch.distributions.categorical import Categorical
 
 from . import utils
 
@@ -140,3 +141,67 @@ class StochasticPixelActor(StochasticActor):
     def forward(self, state, stochastic=False):
         state = state / 255.0
         return super().forward(state, stochastic=stochastic)
+
+
+class BaselineDiscreteCritic(nn.Module):
+    """
+    aka Dueling DQN (https://arxiv.org/abs/1511.06581)
+    """
+
+    def __init__(self, obs_shape, action_size):
+        super().__init__()
+        self.encoder = BaselineEncoder(obs_shape)
+        self.fc = nn.Linear(400, 300)
+        self.v_out = nn.Linear(300, 1)
+        self.a_out = nn.Linear(300, action_size)
+
+    def forward(self, state):
+        x = self.encoder(state)
+        x = F.relu(self.fc(x))
+        val = self.v_out(x)
+        advantage = self.a_out(x)
+        return v + (advantage - advantage.mean(1))
+
+
+class BaselinePixelDiscreteCritic(BaselineDiscreteCritic):
+    def __init__(self, obs_shape, action_size):
+        super().__init__(obs_shape[0], action_size)
+        self.encoder = BaselinePixelEncoder(obs_shape)
+
+    def forward(self, state):
+        state = state / 255.0
+        return super().forward(state)
+
+
+class BaselineDiscreteActor(nn.Module):
+    def __init__(self, obs_shape, action_size):
+        self.encoder = BaselineEncoder(obs_shape)
+        self.fc = nn.Linear(400, 300)
+        self.act_p = nn.Linear(300, action_size)
+
+    def _sample_from(self, act_p):
+        act_dist = Categorical(act_p)
+        act = act_dist.sample().view(-1, 1)
+        logp_a = torch.log(act_p) + 1e-7
+        return act, logp_a
+
+    def forward(self, state, stochastic=False):
+        x = self.encoder(state)
+        x = F.relu(self.fc(x))
+        act_p = F.softmax(self.act_p(x), dim=1)
+        if not stochastic:
+            act = torch.argmax(act_p, dim=1)
+            logp_a = torch.log(act_p[act])
+        else:
+            act, logp_a = self._sample_from(act_p)
+        return act, logp_a
+
+
+class BaselineDiscretePixelActor(BaselineDiscreteActor):
+    def __init__(self, obs_shape, action_size):
+        super().__init__(obs_shape[0], action_size)
+        self.encoder = BaselinePixelEncoder(obs_shape)
+
+    def forward(self, state):
+        state = state / 255.0
+        return super().forward(state)
