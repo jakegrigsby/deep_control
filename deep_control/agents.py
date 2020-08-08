@@ -106,8 +106,7 @@ class TD3Agent:
         )
 
     def process_act(self, act):
-        act = act.to("cpu")
-        return np.squeeze(act.numpy(), 0)
+        return np.squeeze(act.cpu().numpy(), 0)
 
 
 class SACAgent(TD3Agent):

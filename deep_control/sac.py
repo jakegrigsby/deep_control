@@ -50,6 +50,8 @@ def sac(
     Train `agent` on `env` with Soft Actor Critic algorithm.
 
     Reference: https://arxiv.org/abs/1801.01290 and https://arxiv.org/abs/1812.05905
+
+    Also supports discrete action spaces (ref: https://arxiv.org/abs/1910.07207)
     """
     agent.to(device)
 
@@ -294,18 +296,20 @@ def learn_discrete(
     alpha = torch.exp(log_alpha)
     with torch.no_grad():
         # create critic targets (clipped double Q learning)
-        action_s2, logp_a2 = agent.stochastic_forward(
+        action_s1, logp_a1 = agent.stochastic_forward(
             next_state_batch, track_gradients=False, process_states=False
         )
-        target_action_value_s2 = (
-            logp_a2
-            * torch.min(
-                target_agent.critic1(next_state_batch),
-                target_agent.critic2(next_state_batch),
+        target_value_s1 = (
+            logp_a1.exp()
+            * (
+                torch.min(
+                    target_agent.critic1(next_state_batch),
+                    target_agent.critic2(next_state_batch),
+                )
+                - (alpha * logp_a1)
             )
-            - (alpha * logp_a2)
         ).sum(1, keepdim=True)
-        td_target = reward_batch + gamma * (1.0 - done_batch) * (target_action_value_s2)
+        td_target = reward_batch + gamma * (1.0 - done_batch) * (target_value_s1)
 
     # update first critic
     agent_critic1_pred = agent.critic1(state_batch).gather(1, action_batch.long())
@@ -339,10 +343,12 @@ def learn_discrete(
             state_batch, track_gradients=True, process_states=False
         )
         actor_loss = (
-            -(
-                logp_a
-                * torch.min(agent.critic1(state_batch), agent.critic2(state_batch))
-                - (alpha.detach() * logp_a)
+            (
+                logp_a.exp()
+                * (
+                    (alpha.detach() * logp_a)
+                    - torch.min(agent.critic1(state_batch), agent.critic2(state_batch))
+                )
             )
             .sum(1, keepdim=True)
             .mean()
@@ -355,7 +361,7 @@ def learn_discrete(
 
         # alpha update
         alpha_loss = (
-            (logp_a.detach() * (-alpha * (logp_a + target_entropy).detach()))
+            (logp_a.detach().exp() * (-alpha * (logp_a + target_entropy).detach()))
             .sum(1, keepdim=True)
             .mean()
         )

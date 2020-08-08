@@ -183,7 +183,7 @@ class BaselineDiscreteActor(nn.Module):
     def _sample_from(self, act_p):
         act_dist = Categorical(act_p)
         act = act_dist.sample().view(-1, 1)
-        logp_a = torch.log(act_p) + 1e-7
+        logp_a = torch.log(act_p + 1e-7)
         return act, logp_a
 
     def forward(self, state, stochastic=False):
@@ -192,7 +192,7 @@ class BaselineDiscreteActor(nn.Module):
         act_p = F.softmax(self.act_p(x), dim=1)
         if not stochastic:
             act = torch.argmax(act_p, dim=1)
-            logp_a = torch.log(act_p[act])
+            logp_a = torch.log(act_p.gather(1, act.view(-1, 1)))
         else:
             act, logp_a = self._sample_from(act_p)
         act = act.float()
