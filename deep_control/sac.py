@@ -45,7 +45,11 @@ def sac(
     init_alpha=0.1,
     **kwargs,
 ):
+    """
+    Train `agent` on `env` with Soft Actor Critic algorithm.
 
+    Reference: https://arxiv.org/abs/1801.01290 and https://arxiv.org/abs/1812.05905
+    """
     agent.to(device)
     max_act = env.action_space.high[0]
 
@@ -300,19 +304,77 @@ def add_args(parser):
     parser.add_argument(
         "--warmup_steps", type=int, default=1000, help="warmup length, in steps"
     )
-    parser.add_argument("--render", action="store_true")
-    parser.add_argument("--actor_clip", type=float, default=None)
-    parser.add_argument("--critic_clip", type=float, default=None)
-    parser.add_argument("--name", type=str, default="sac_run")
-    parser.add_argument("--actor_l2", type=float, default=0.0)
-    parser.add_argument("--critic_l2", type=float, default=0.0)
-    parser.add_argument("--delay", type=int, default=1)
-    parser.add_argument("--save_interval", type=int, default=100_000)
-    parser.add_argument("--verbosity", type=int, default=1)
-    parser.add_argument("--gradient_updates_per_step", type=int, default=1)
-    parser.add_argument("--prioritized_replay", action="store_true")
-    parser.add_argument("--skip_save_to_disk", action="store_true")
-    parser.add_argument("--skip_log_to_disk", action="store_true")
+    parser.add_argument(
+        "--render",
+        action="store_true",
+        help="flag to enable env rendering during training",
+    )
+    parser.add_argument(
+        "--actor_clip",
+        type=float,
+        default=None,
+        help="gradient clipping for actor updates",
+    )
+    parser.add_argument(
+        "--critic_clip",
+        type=float,
+        default=None,
+        help="gradient clipping for critic updates",
+    )
+    parser.add_argument(
+        "--name", type=str, default="sac_run", help="dir name for saves"
+    )
+    parser.add_argument(
+        "--actor_l2",
+        type=float,
+        default=0.0,
+        help="L2 regularization coeff for actor network",
+    )
+    parser.add_argument(
+        "--critic_l2",
+        type=float,
+        default=0.0,
+        help="L2 regularization coeff for critic network",
+    )
+    parser.add_argument(
+        "--delay",
+        type=int,
+        default=1,
+        help="How many steps to go between actor updates",
+    )
+    parser.add_argument(
+        "--save_interval",
+        type=int,
+        default=100_000,
+        help="How many steps to go between saving the agent params to disk",
+    )
+    parser.add_argument(
+        "--verbosity",
+        type=int,
+        default=1,
+        help="verbosity > 0 displays a progress bar during training",
+    )
+    parser.add_argument(
+        "--gradient_updates_per_step",
+        type=int,
+        default=1,
+        help="how many gradient updates to make per env step",
+    )
+    parser.add_argument(
+        "--prioritized_replay",
+        action="store_true",
+        help="flag that enables use of prioritized experience replay",
+    )
+    parser.add_argument(
+        "--skip_save_to_disk",
+        action="store_true",
+        help="flag to skip saving agent params to disk during training",
+    )
+    parser.add_argument(
+        "--skip_log_to_disk",
+        action="store_true",
+        help="flag to skip saving agent performance logs to disk during training",
+    )
 
 
 if __name__ == "__main__":
