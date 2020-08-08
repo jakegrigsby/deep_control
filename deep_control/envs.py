@@ -122,6 +122,7 @@ def load_atari(
     rgb=False,
     normalize=False,
     frame_stack=4,
+    clip_reward=True,
     **_,
 ):
     """
@@ -144,9 +145,22 @@ def load_atari(
         grayscale_obs=not rgb,
         scale_obs=normalize,
     )
-    env = gym.wrappers.FrameStack(env, num_stack=frame_stack)
+    if frame_stack > 1:
+        env = gym.wrappers.FrameStack(env, num_stack=frame_stack)
+    if clip_reward:
+        env = ClipReward(env)
     env = DiscreteActionWrapper(env)
     return env
+
+
+class ClipReward(gym.RewardWrapper):
+    def __init__(self, env, low=-1.0, high=1.0):
+        super().__init__(env)
+        self._clip_low = low
+        self._clip_high = high
+
+    def reward(self, rew):
+        return max(min(rew, self._clip_high), self._clip_low)
 
 
 def load_dmc(
