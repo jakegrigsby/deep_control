@@ -62,7 +62,7 @@ def load_gym(env_id):
     # optional pybullet import
     try:
         import pybullet
-        import pybullet_gym
+        import pybulletgym
     except ImportError:
         pass
     return gym.make(env_id)

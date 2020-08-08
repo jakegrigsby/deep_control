@@ -46,6 +46,8 @@ def td3(
     log_to_disk=True,
     verbosity=0,
     gradient_updates_per_step=1,
+    td_reg_coeff=0.0,
+    td_reg_coeff_decay=0.9999,
 ):
 
     agent.to(device)
@@ -109,20 +111,21 @@ def td3(
         update_policy = step % delay == 0
         for _ in range(gradient_updates_per_step):
             learn(
-                buffer,
-                target_agent,
-                agent,
-                actor_optimizer,
-                critic1_optimizer,
-                critic2_optimizer,
-                env.action_space.high[0],
-                batch_size,
-                target_noise_scale,
-                c,
-                gamma,
-                critic_clip,
-                actor_clip,
-                update_policy,
+                buffer=buffer,
+                target_agent=target_agent,
+                agent=agent,
+                actor_optimizer=actor_optimizer,
+                critic1_optimizer=critic1_optimizer,
+                critic2_optimizer=critic2_optimizer,
+                max_act=env.action_space.high[0],
+                batch_size=batch_size,
+                target_noise_scale=target_noise_scale,
+                c=c,
+                gamma=gamma,
+                critic_clip=critic_clip,
+                actor_clip=actor_clip,
+                td_reg_coeff=td_reg_coeff,
+                update_policy=update_policy,
             )
 
             # move target model towards training model
@@ -131,6 +134,9 @@ def td3(
                 # original td3 impl only updates critic targets with the actor...
                 utils.soft_update(target_agent.critic1, agent.critic1, tau)
                 utils.soft_update(target_agent.critic2, agent.critic2, tau)
+
+        # decay td regularization
+        td_reg_coeff *= td_reg_coeff_decay
 
         if step % eval_interval == 0 or step == num_steps - 1:
             mean_return = run.evaluate_agent(
@@ -163,6 +169,7 @@ def learn(
     gamma,
     critic_clip,
     actor_clip,
+    td_reg_coeff,
     update_policy=True,
 ):
 
@@ -225,10 +232,15 @@ def learn(
         torch.nn.utils.clip_grad_norm_(agent.critic2.parameters(), critic_clip)
     critic2_optimizer.step()
 
+    mean_critic_loss = (critic1_loss + critic2_loss).detach() / 2.0
+
     if update_policy:
         # actor update
         agent_actions = agent.actor(state_batch)
-        actor_loss = -agent.critic1(state_batch, agent_actions).mean()
+        actor_loss = -(
+            agent.critic1(state_batch, agent_actions).mean()
+            - td_reg_coeff * mean_critic_loss
+        )
         actor_optimizer.zero_grad()
         actor_loss.backward()
         if actor_clip:
@@ -315,6 +327,8 @@ def add_args(parser):
     parser.add_argument("--buffer_size", type=int, default=1_000_000)
     parser.add_argument("--skip_save_to_disk", action="store_true")
     parser.add_argument("--skip_log_to_disk", action="store_true")
+    parser.add_argument("--td_reg_coeff", type=float, default=0.0)
+    parser.add_argument("--td_reg_coeff_decay", type=float, default=0.9999)
 
 
 if __name__ == "__main__":
