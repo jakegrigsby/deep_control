@@ -95,7 +95,7 @@ class TD3Agent:
         self.actor.eval()
         with torch.no_grad():
             action = self.actor(state)
-        return np.squeeze(action.cpu().numpy(), 0)
+        return self.process_state(action)
 
     def collection_forward(self, state):
         return self.forward(state)
@@ -104,6 +104,10 @@ class TD3Agent:
         return torch.from_numpy(np.expand_dims(state, 0).astype(np.float32)).to(
             utils.device
         )
+
+    def process_act(self, act):
+        act = act.to("cpu")
+        return np.squeeze(act.numpy(), 0)
 
 
 class SACAgent(TD3Agent):
@@ -118,7 +122,7 @@ class SACAgent(TD3Agent):
         self.actor.eval()
         with torch.no_grad():
             act, _ = self.actor.forward(state, stochastic=False)
-        return np.squeeze(act.cpu().numpy(), 0)
+        return self.process_act(act)
 
     def collection_forward(self, state):
         act, _ = self.stochastic_forward(
@@ -135,19 +139,19 @@ class SACAgent(TD3Agent):
             with torch.no_grad():
                 act, logp_a = self.actor.forward(state, stochastic=True)
         if process_states:
-            act = np.squeeze(act.cpu().numpy(), 0)
+            act = self.process_act(act)
         return act, logp_a
 
 
 class SACDAgent(SACAgent):
-    def __init__(self, obs_space_size, act_space_size, max_action):
+    def __init__(self, obs_space_size, act_space_size):
         self.actor = nets.BaselineDiscreteActor(obs_space_size, act_space_size)
         self.critic1 = nets.BaselineDiscreteCritic(obs_space_size, act_space_size)
         self.critic2 = nets.BaselineDiscreteCritic(obs_space_size, act_space_size)
 
 
 class PixelSACDAgent(SACDAgent):
-    def __init__(self, obs_space_size, act_space_size, max_action):
+    def __init__(self, obs_space_size, act_space_size):
         self.actor = nets.BaselinePixelDiscreteActor(obs_space_size, act_space_size)
         self.critic1 = nets.BaselinePixelDiscreteCritic(obs_space_size, act_space_size)
         self.critic2 = nets.BaselinePixelDiscreteCritic(obs_space_size, act_space_size)

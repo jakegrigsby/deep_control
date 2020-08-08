@@ -160,7 +160,7 @@ class BaselineDiscreteCritic(nn.Module):
         x = F.relu(self.fc(x))
         val = self.v_out(x)
         advantage = self.a_out(x)
-        return v + (advantage - advantage.mean(1))
+        return val + (advantage - advantage.mean(1, keepdim=True))
 
 
 class BaselinePixelDiscreteCritic(BaselineDiscreteCritic):
@@ -175,6 +175,7 @@ class BaselinePixelDiscreteCritic(BaselineDiscreteCritic):
 
 class BaselineDiscreteActor(nn.Module):
     def __init__(self, obs_shape, action_size):
+        super().__init__()
         self.encoder = BaselineEncoder(obs_shape)
         self.fc = nn.Linear(400, 300)
         self.act_p = nn.Linear(300, action_size)
@@ -194,6 +195,7 @@ class BaselineDiscreteActor(nn.Module):
             logp_a = torch.log(act_p[act])
         else:
             act, logp_a = self._sample_from(act_p)
+        act = act.float()
         return act, logp_a
 
 

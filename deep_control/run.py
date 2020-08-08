@@ -111,6 +111,8 @@ def warmup_buffer(buffer, env, warmup_steps, max_episode_steps):
             steps_this_ep = 0
             done = False
         rand_action = env.action_space.sample()
+        if not isinstance(rand_action, np.ndarray):
+            rand_action = np.array(float(rand_action))
         next_state, reward, done, info = env.step(rand_action)
         buffer.push(state, rand_action, reward, next_state, done)
         state = next_state

@@ -43,6 +43,7 @@ def sac(
     verbosity=0,
     gradient_updates_per_step=1,
     init_alpha=0.1,
+    discrete_actions=False,
     **kwargs,
 ):
     """
@@ -51,7 +52,6 @@ def sac(
     Reference: https://arxiv.org/abs/1801.01290 and https://arxiv.org/abs/1812.05905
     """
     agent.to(device)
-    max_act = env.action_space.high[0]
 
     # initialize target networks
     target_agent = copy.deepcopy(agent)
@@ -74,6 +74,15 @@ def sac(
     log_alpha.requires_grad = True
 
     log_alpha_optimizer = torch.optim.Adam([log_alpha], lr=alpha_lr)
+
+    if not discrete_actions:
+        # continuous action learning
+        target_entropy = -env.action_space.n
+        learn_fn = learn
+    else:
+        # discrete action learning
+        target_entropy = -math.log(1.0 / env.action_space.n) * 0.98
+        learn_fn = learn_discrete
 
     if save_to_disk or log_to_disk:
         save_dir = utils.make_process_dirs(name)
@@ -107,7 +116,7 @@ def sac(
 
         update_policy = step % delay == 0
         for _ in range(gradient_updates_per_step):
-            learn(
+            learn_fn(
                 buffer=buffer,
                 target_agent=target_agent,
                 agent=agent,
@@ -116,7 +125,7 @@ def sac(
                 critic2_optimizer=critic2_optimizer,
                 log_alpha=log_alpha,
                 log_alpha_optimizer=log_alpha_optimizer,
-                target_entropy=-env.action_space.shape[0],  # target_entropy = -|A|
+                target_entropy=target_entropy,
                 batch_size=batch_size,
                 gamma=gamma,
                 critic_clip=critic_clip,
@@ -124,11 +133,11 @@ def sac(
                 update_policy=update_policy,
             )
 
-            # move target model towards training model
-            if update_policy:
-                utils.soft_update(target_agent.actor, agent.actor, tau)
-                utils.soft_update(target_agent.critic1, agent.critic1, tau)
-                utils.soft_update(target_agent.critic2, agent.critic2, tau)
+        # move target model towards training model
+        if update_policy:
+            utils.soft_update(target_agent.actor, agent.actor, tau)
+            utils.soft_update(target_agent.critic1, agent.critic1, tau)
+            utils.soft_update(target_agent.critic2, agent.critic2, tau)
 
         if step % eval_interval == 0 or step == num_steps - 1:
             mean_return = run.evaluate_agent(
@@ -240,6 +249,116 @@ def learn(
 
         # alpha update
         alpha_loss = (-alpha * (logp_a + target_entropy).detach()).mean()
+        log_alpha_optimizer.zero_grad()
+        alpha_loss.backward()
+        log_alpha_optimizer.step()
+
+    if per:
+        new_priorities = (abs(td_error1) + 1e-5).cpu().detach().squeeze(1).numpy()
+        buffer.update_priorities(priority_idxs, new_priorities)
+
+
+def learn_discrete(
+    buffer,
+    target_agent,
+    agent,
+    actor_optimizer,
+    critic1_optimizer,
+    critic2_optimizer,
+    log_alpha_optimizer,
+    target_entropy,
+    batch_size,
+    log_alpha,
+    gamma,
+    critic_clip,
+    actor_clip,
+    update_policy=True,
+):
+    per = isinstance(buffer, replay.PrioritizedReplayBuffer)
+    if per:
+        batch, imp_weights, priority_idxs = buffer.sample(batch_size)
+        imp_weights = imp_weights.to(device)
+    else:
+        batch = buffer.sample(batch_size)
+
+    # prepare transitions for models
+    state_batch, action_batch, reward_batch, next_state_batch, done_batch = batch
+    state_batch = state_batch.to(device)
+    next_state_batch = next_state_batch.to(device)
+    action_batch = action_batch.to(device)
+    reward_batch = reward_batch.to(device)
+    done_batch = done_batch.to(device)
+
+    agent.train()
+
+    alpha = torch.exp(log_alpha)
+    with torch.no_grad():
+        # create critic targets (clipped double Q learning)
+        action_s2, logp_a2 = agent.stochastic_forward(
+            next_state_batch, track_gradients=False, process_states=False
+        )
+        target_action_value_s2 = (
+            logp_a2
+            * torch.min(
+                target_agent.critic1(next_state_batch),
+                target_agent.critic2(next_state_batch),
+            )
+            - (alpha * logp_a2)
+        ).sum(1, keepdim=True)
+        td_target = reward_batch + gamma * (1.0 - done_batch) * (target_action_value_s2)
+
+    # update first critic
+    agent_critic1_pred = agent.critic1(state_batch).gather(1, action_batch.long())
+    td_error1 = td_target - agent_critic1_pred
+    if per:
+        critic1_loss = (imp_weights * 0.5 * (td_error1 ** 2)).mean()
+    else:
+        critic1_loss = 0.5 * (td_error1 ** 2).mean()
+    critic1_optimizer.zero_grad()
+    critic1_loss.backward()
+    if critic_clip:
+        torch.nn.utils.clip_grad_norm_(agent.critic1.parameters(), critic_clip)
+    critic1_optimizer.step()
+
+    # update second critic
+    agent_critic2_pred = agent.critic2(state_batch).gather(1, action_batch.long())
+    td_error2 = td_target - agent_critic2_pred
+    if per:
+        critic2_loss = (imp_weights * 0.5 * (td_error2 ** 2)).mean()
+    else:
+        critic2_loss = 0.5 * (td_error2 ** 2).mean()
+    critic2_optimizer.zero_grad()
+    critic2_loss.backward()
+    if critic_clip:
+        torch.nn.utils.clip_grad_norm_(agent.critic2.parameters(), critic_clip)
+    critic2_optimizer.step()
+
+    if update_policy:
+        # actor update
+        agent_actions, logp_a = agent.stochastic_forward(
+            state_batch, track_gradients=True, process_states=False
+        )
+        actor_loss = (
+            -(
+                logp_a
+                * torch.min(agent.critic1(state_batch), agent.critic2(state_batch))
+                - (alpha.detach() * logp_a)
+            )
+            .sum(1, keepdim=True)
+            .mean()
+        )
+        actor_optimizer.zero_grad()
+        actor_loss.backward()
+        if actor_clip:
+            torch.nn.utils.clip_grad_norm_(agent.actor.parameters(), actor_clip)
+        actor_optimizer.step()
+
+        # alpha update
+        alpha_loss = (
+            (logp_a.detach() * (-alpha * (logp_a + target_entropy).detach()))
+            .sum(1, keepdim=True)
+            .mean()
+        )
         log_alpha_optimizer.zero_grad()
         alpha_loss.backward()
         log_alpha_optimizer.step()
@@ -375,6 +494,11 @@ def add_args(parser):
         action="store_true",
         help="flag to skip saving agent performance logs to disk during training",
     )
+    parser.add_argument(
+        "--discrete_actions",
+        action="store_true",
+        help="enable SAC Discrete update function for discrete action spaces",
+    )
 
 
 if __name__ == "__main__":
@@ -425,4 +549,5 @@ if __name__ == "__main__":
         gradient_updates_per_step=args.gradient_updates_per_step,
         save_to_disk=not args.skip_save_to_disk,
         log_to_disk=not args.skip_log_to_disk,
+        discrete_actions=args.discrete_actions,
     )

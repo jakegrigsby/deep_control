@@ -115,9 +115,10 @@ def ddpg(
                 critic_clip=critic_clip,
                 actor_clip=actor_clip,
             )
-            # move target model towards training model
-            utils.soft_update(target_agent.actor, agent.actor, tau)
-            utils.soft_update(target_agent.critic, agent.critic, tau)
+
+        # move target model towards training model
+        utils.soft_update(target_agent.actor, agent.actor, tau)
+        utils.soft_update(target_agent.critic, agent.critic, tau)
 
         if step % eval_interval == 0 or step == num_steps - 1:
             mean_return = run.evaluate_agent(

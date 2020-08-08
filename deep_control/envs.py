@@ -26,6 +26,14 @@ class ChannelsFirstWrapper(gym.ObservationWrapper):
         return frame - np.zeros_like(frame)
 
 
+class DiscreteWrapper(gym.ActionWrapper):
+    def action(self, action):
+        if isinstance(action, np.ndarray):
+            if len(action.shape) > 0:
+                action = action[0]
+        return int(action)
+
+
 class GoalBasedWrapper(gym.ObservationWrapper):
     """
     Some goal-based envs (like the Gym Robotics suite) use dictionary observations
