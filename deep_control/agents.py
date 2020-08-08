@@ -139,6 +139,20 @@ class SACAgent(TD3Agent):
         return act, logp_a
 
 
+class SACDAgent(SACAgent):
+    def __init__(self, obs_space_size, act_space_size, max_action):
+        self.actor = nets.BaselineDiscreteActor(obs_space_size, act_space_size)
+        self.critic1 = nets.BaselineDiscreteCritic(obs_space_size, act_space_size)
+        self.critic2 = nets.BaselineDiscreteCritic(obs_space_size, act_space_size)
+
+
+class PixelSACDAgent(SACDAgent):
+    def __init__(self, obs_space_size, act_space_size, max_action):
+        self.actor = nets.BaselinePixelDiscreteActor(obs_space_size, act_space_size)
+        self.critic1 = nets.BaselinePixelDiscreteCritic(obs_space_size, act_space_size)
+        self.critic2 = nets.BaselinePixelDiscreteCritic(obs_space_size, act_space_size)
+
+
 class PixelTD3Agent(TD3Agent):
     def __init__(self, obs_space_shape, act_space_size, max_action):
         self.actor = nets.BaselinePixelActor(
