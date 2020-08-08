@@ -199,11 +199,11 @@ class BaselineDiscreteActor(nn.Module):
         return act, logp_a
 
 
-class BaselineDiscretePixelActor(BaselineDiscreteActor):
+class BaselinePixelDiscreteActor(BaselineDiscreteActor):
     def __init__(self, obs_shape, action_size):
         super().__init__(obs_shape[0], action_size)
         self.encoder = BaselinePixelEncoder(obs_shape)
 
-    def forward(self, state):
+    def forward(self, state, stochastic=False):
         state = state / 255.0
-        return super().forward(state)
+        return super().forward(state, stochastic=stochastic)

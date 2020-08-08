@@ -194,6 +194,12 @@ class ReplayBufferStorage:
             r, d = [r], [d]
 
         if not isinstance(s, torch.Tensor):
+            # convert states to numpy (checking for LazyFrames)
+            if not isinstance(s, np.ndarray):
+                s = np.asarray(s)
+            if not isinstance(s_1, np.ndarray):
+                s_1 = np.asarray(s_1)
+
             # convert to torch tensors
             s = torch.from_numpy(s)
             a = torch.from_numpy(a).float()
@@ -295,8 +301,12 @@ class ReplayBuffer:
 
 
 class PrioritizedReplayBuffer(ReplayBuffer):
-    def __init__(self, size, state_shape, action_shape, alpha=0.6, beta=1.0):
-        super(PrioritizedReplayBuffer, self).__init__(size, state_shape, action_shape)
+    def __init__(
+        self, size, state_shape, action_shape, state_dtype=float, alpha=0.6, beta=1.0
+    ):
+        super(PrioritizedReplayBuffer, self).__init__(
+            size, state_shape, action_shape, state_dtype
+        )
         assert alpha >= 0
         self.alpha = alpha
         self.beta = beta

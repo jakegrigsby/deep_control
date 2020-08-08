@@ -26,7 +26,14 @@ class ChannelsFirstWrapper(gym.ObservationWrapper):
         return frame - np.zeros_like(frame)
 
 
-class DiscreteWrapper(gym.ActionWrapper):
+class DiscreteActionWrapper(gym.ActionWrapper):
+    """
+    This is intended to let the action be any scalar
+    (float or int) or np array (float or int) of size 1.
+
+    floats are cast to ints using python's standard rounding.
+    """
+
     def action(self, action):
         if isinstance(action, np.ndarray):
             if len(action.shape) > 0:
@@ -63,7 +70,7 @@ def add_gym_args(parser):
     parser.add_argument("--env", type=str, default="Pendulum-v0")
 
 
-def load_gym(env_id):
+def load_gym(env_id, seed=None, **_):
     """
     Load an environment from OpenAI gym (or pybullet_gym, if installed)
     """
@@ -73,7 +80,11 @@ def load_gym(env_id):
         import pybulletgym
     except ImportError:
         pass
-    return gym.make(env_id)
+    env = gym.make(env_id)
+    if seed is None:
+        seed = random.randint(1, 100)
+    env.seed(seed)
+    return env
 
 
 def add_dmc_args(parser):
@@ -90,6 +101,54 @@ def add_dmc_args(parser):
     parser.add_argument("--channels_last", action="store_true")
 
 
+def add_atari_args(parser):
+    parser.add_argument("--game_id", type=str, default="Boxing-v0")
+    parser.add_argument("--noop_max", type=int, default=30)
+    parser.add_argument("--frame_skip", type=int, default=1)
+    parser.add_argument("--screen_size", type=int, default=84)
+    parser.add_argument("--terminal_on_life_loss", action="store_true")
+    parser.add_argument("--rgb", action="store_true")
+    parser.add_argument("--normalize", action="store_true")
+    parser.add_argument("--frame_stack", type=int, default=4)
+
+
+def load_atari(
+    game_id,
+    seed=None,
+    noop_max=30,
+    frame_skip=1,
+    screen_size=84,
+    terminal_on_life_loss=False,
+    rgb=False,
+    normalize=False,
+    frame_stack=4,
+    **_,
+):
+    """
+    Load a game from the Atari benchmark, with the usual settings
+
+    Note that the simplest game ids (e.g. Boxing-v0) come with frame
+    skipping by default, and you'll get an error if the frame_skp arg > 1.
+    Use `BoxingNoFrameskip-v0` with frame_skip > 1.
+    """
+    env = gym.make(game_id)
+    if seed is None:
+        seed = random.randint(1, 100)
+    env.seed(seed)
+    env = gym.wrappers.AtariPreprocessing(
+        env,
+        noop_max=noop_max,
+        frame_skip=frame_skip,
+        screen_size=screen_size,
+        terminal_on_life_loss=terminal_on_life_loss,
+        grayscale_obs=not rgb,
+        scale_obs=normalize,
+    )
+    env = gym.wrappers.FrameStack(env, num_stack=frame_stack)
+    env = DiscreteActionWrapper(env)
+    return env
+
+
 def load_dmc(
     domain_name,
     task_name,
@@ -100,7 +159,7 @@ def load_dmc(
     camera_id=0,
     frame_skip=1,
     channels_last=False,
-    **kwargs
+    **_,
 ):
     """
     Load a task from the deepmind control suite. 

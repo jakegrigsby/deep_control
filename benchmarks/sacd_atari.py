@@ -7,27 +7,21 @@ import deep_control as dc
 
 def main():
     parser = argparse.ArgumentParser()
-    """
-    # add dmc-related cl args
-    dc.envs.add_dmc_args(parser)
-    """
+
+    # add atari-related cl args
+    dc.envs.add_atari_args(parser)
+
     # add sac-related cl args
     dc.sac.add_args(parser)
     args = parser.parse_args()
     args.discrete_actions = True
 
-    env = dc.envs.DiscreteWrapper(gym.make("MountainCar-v0"))
+    env = dc.envs.load_atari(**vars(args))
 
     obs_shape = env.observation_space.shape
     actions = env.action_space.n
 
-    """
-    # select an agent architecture
-    if args.from_pixels:
-        agent = dc.agents.PixelSACDAgent(obs_shape, action_shape[0], max_action)
-    else:
-    """
-    agent = dc.agents.SACDAgent(obs_shape[0], actions)
+    agent = dc.agents.PixelSACDAgent(obs_shape, actions)
 
     # select a replay buffer
     if args.prioritized_replay:
@@ -37,7 +31,7 @@ def main():
     buffer = buffer_t(
         args.buffer_size,
         state_shape=env.observation_space.shape,
-        state_dtype=float,
+        state_dtype=int,
         action_shape=(1,),
     )
 
