@@ -351,7 +351,7 @@ if __name__ == "__main__":
     )
     add_args(parser)
     args = parser.parse_args()
-    agent, env = envs.load_env(args.env, "td3")
+    agent, env = envs.load_exp(args.env, "td3")
 
     if args.prioritized_replay:
         buffer_t = replay.PrioritizedReplayBuffer

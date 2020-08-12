@@ -97,7 +97,7 @@ def add_dmc_args(parser):
     """
     parser.add_argument("--domain_name", type=str, default="fish")
     parser.add_argument("--task_name", type=str, default="swim")
-    parser.add_argument("--from_pixels", action="store_true")
+    parser.add_argument("--from_pixels", action="store_true", help="Use image observations")
     parser.add_argument("--height", type=int, default=84)
     parser.add_argument("--width", type=int, default=84)
     parser.add_argument("--camera_id", type=int, default=0)
@@ -149,10 +149,10 @@ def load_atari(
         grayscale_obs=not rgb,
         scale_obs=normalize,
     )
-    if frame_stack > 1:
-        env = gym.wrappers.FrameStack(env, num_stack=frame_stack)
     if clip_reward:
         env = ClipReward(env)
+    if frame_stack > 1:
+        env = gym.wrappers.FrameStack(env, num_stack=frame_stack)
     env = DiscreteActionWrapper(env)
     return env
 
@@ -203,7 +203,18 @@ def load_dmc(
     )
 
 
-def load_env(env_id, algo_type):
+def load_exp(env_id, algo_type):
+    """
+    convenience function for loading common settings for gym envs,
+    and the correct baseline agent
+
+    ex: load_exp("FetchPush-v0", "sac") loads the FetchPush env,
+    deals with the dict obs spaces from goal-based envs, and loads
+    the state-based SAC agent.
+
+    load_exp("CarRacing-v0", "td3") loads the CarRacing env,
+    deals with the image obs spaces and loads the pixel-based TD3 agent.
+    """
     env = load_gym(env_id)
 
     # decide if env is a goal based (dict) env

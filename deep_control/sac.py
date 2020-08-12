@@ -523,7 +523,7 @@ if __name__ == "__main__":
     )
     add_args(parser)
     args = parser.parse_args()
-    agent, env = envs.load_env(args.env, "sac")
+    agent, env = envs.load_exp(args.env, "sac")
 
     if args.prioritized_replay:
         buffer_t = replay.PrioritizedReplayBuffer
