@@ -1,7 +1,7 @@
 import argparse
 import copy
-import time
 import math
+import time
 
 import gym
 import numpy as np
@@ -79,11 +79,11 @@ def sac(
 
     if not discrete_actions:
         # continuous action learning
-        target_entropy = -env.action_space.n
+        target_entropy = -env.action_space.shape[0]
         learn_fn = learn
     else:
         # discrete action learning
-        target_entropy = -math.log(1.0 / env.action_space.n) * 0.98
+        target_entropy = -math.log(1.0 / env.action_space.shape[0]) * 0.98
         learn_fn = learn_discrete
 
     if save_to_disk or log_to_disk:
@@ -360,11 +360,7 @@ def learn_discrete(
         actor_optimizer.step()
 
         # alpha update
-        alpha_loss = (
-            (logp_a.detach().exp() * (-alpha * (logp_a + target_entropy).detach()))
-            .sum(1, keepdim=True)
-            .mean()
-        )
+        alpha_loss = torch.sum(logp_a.exp().detach()*(-alpha * (logp_a + target_entropy).detach()), dim=1, keepdim=True).mean()
         log_alpha_optimizer.zero_grad()
         alpha_loss.backward()
         log_alpha_optimizer.step()

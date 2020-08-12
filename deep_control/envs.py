@@ -34,6 +34,10 @@ class DiscreteActionWrapper(gym.ActionWrapper):
     floats are cast to ints using python's standard rounding.
     """
 
+    def __init__(self, env):
+        super().__init__(env)
+        self.action_space.shape = (env.action_space.n,)
+
     def action(self, action):
         if isinstance(action, np.ndarray):
             if len(action.shape) > 0:

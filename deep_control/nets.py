@@ -2,8 +2,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
-from torch.distributions.normal import Normal
 from torch.distributions.categorical import Categorical
+from torch.distributions.normal import Normal
 
 from . import utils
 
