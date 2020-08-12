@@ -19,6 +19,7 @@ def ddpg(
     env,
     buffer,
     num_steps=1_000_000,
+    transitions_per_step=1,
     max_episode_steps=100_000,
     batch_size=64,
     tau=0.005,
@@ -89,19 +90,20 @@ def ddpg(
         steps_iter = tqdm.tqdm(steps_iter)
 
     for step in steps_iter:
-        if done:
-            state = env.reset()
-            random_process.reset_states()
-            steps_this_ep = 0
-            done = False
-        action = agent.forward(state)
-        noisy_action = run.exploration_noise(action, random_process, max_act)
-        next_state, reward, done, info = env.step(noisy_action)
-        buffer.push(state, noisy_action, reward, next_state, done)
-        state = next_state
-        steps_this_ep += 1
-        if steps_this_ep >= max_episode_steps:
-            done = True
+        for _ in range(transitions_per_step):
+            if done:
+                state = env.reset()
+                random_process.reset_states()
+                steps_this_ep = 0
+                done = False
+            action = agent.forward(state)
+            noisy_action = run.exploration_noise(action, random_process, max_act)
+            next_state, reward, done, info = env.step(noisy_action)
+            buffer.push(state, noisy_action, reward, next_state, done)
+            state = next_state
+            steps_this_ep += 1
+            if steps_this_ep >= max_episode_steps:
+                done = True
 
         for _ in range(gradient_updates_per_step):
             learn(
@@ -124,9 +126,11 @@ def ddpg(
             mean_return = run.evaluate_agent(
                 agent, env, eval_episodes, max_episode_steps, render
             )
+            # because we usually care about logging the actual # of env interactions
+            # as the x axis, steps = step * transitions_per_step
             if log_to_disk:
-                writer.add_scalar("return", mean_return, step)
-            learning_curve.append((step, mean_return))
+                writer.add_scalar("return", mean_return, step * transitions_per_step)
+            learning_curve.append((step * transitions_per_step, mean_return))
 
         if step % save_interval == 0 and save_to_disk:
             agent.save(save_dir)
@@ -204,6 +208,12 @@ def add_args(parser):
         "--num_steps", type=int, default=1000000, help="number of training steps"
     )
     parser.add_argument(
+        "--transitions_per_step",
+        type=int,
+        default=1,
+        help="number of env steps per training step (aka replay ratio numerator)",
+    )
+    parser.add_argument(
         "--max_episode_steps",
         type=int,
         default=100000,
@@ -268,7 +278,12 @@ def add_args(parser):
     parser.add_argument("--verbosity", type=int, default=1)
     parser.add_argument("--skip_save_to_disk", action="store_true")
     parser.add_argument("--skip_log_to_disk", action="store_true")
-    parser.add_argument("--gradient_updates_per_step", type=int, default=1)
+    parser.add_argument(
+        "--gradient_updates_per_step",
+        type=int,
+        default=1,
+        help="learning updates per training step (aka replay ratio denominator)",
+    )
     parser.add_argument("--prioritized_replay", action="store_true")
     parser.add_argument("--buffer_size", type=int, default=1_000_000)
 
@@ -298,6 +313,7 @@ if __name__ == "__main__":
         env,
         buffer,
         num_steps=args.num_steps,
+        transitions_per_step=args.transitions_per_step,
         max_episode_steps=args.max_episode_steps,
         batch_size=args.batch_size,
         tau=args.tau,
