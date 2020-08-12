@@ -19,6 +19,7 @@ def td3(
     env,
     buffer,
     num_steps=1_000_000,
+    transitions_per_step=1,
     max_episode_steps=100_000,
     batch_size=64,
     tau=0.005,
@@ -99,19 +100,20 @@ def td3(
         steps_iter = tqdm.tqdm(steps_iter)
 
     for step in steps_iter:
-        if done:
-            state = env.reset()
-            random_process.reset_states()
-            steps_this_ep = 0
-            done = False
-        action = agent.forward(state)
-        noisy_action = run.exploration_noise(action, random_process, max_act)
-        next_state, reward, done, info = env.step(noisy_action)
-        buffer.push(state, noisy_action, reward, next_state, done)
-        state = next_state
-        steps_this_ep += 1
-        if steps_this_ep >= max_episode_steps:
-            done = True
+        for _ in range(transitions_per_step):
+            if done:
+                state = env.reset()
+                random_process.reset_states()
+                steps_this_ep = 0
+                done = False
+            action = agent.forward(state)
+            noisy_action = run.exploration_noise(action, random_process, max_act)
+            next_state, reward, done, info = env.step(noisy_action)
+            buffer.push(state, noisy_action, reward, next_state, done)
+            state = next_state
+            steps_this_ep += 1
+            if steps_this_ep >= max_episode_steps:
+                done = True
 
         update_policy = step % delay == 0
         for _ in range(gradient_updates_per_step):
@@ -148,9 +150,9 @@ def td3(
                 agent, env, eval_episodes, max_episode_steps, render
             )
             if log_to_disk:
-                writer.add_scalar("return", mean_return, step)
+                writer.add_scalar("return", mean_return, step * transitions_per_step)
 
-            learning_curve.append((step, mean_return))
+            learning_curve.append((step * transitions_per_step, mean_return))
 
         if step % save_interval == 0 and save_to_disk:
             agent.save(save_dir)
@@ -262,6 +264,12 @@ def add_args(parser):
         "--num_steps", type=int, default=10 ** 6, help="number of training steps",
     )
     parser.add_argument(
+        "--transitions_per_step",
+        type=int,
+        default=1,
+        help="env transitions collected per training step. Defaults to 1, in which case we're training for num_steps total env steps. But when looking for replay ratios < 1, this value will need to be set higher.",
+    )
+    parser.add_argument(
         "--max_episode_steps",
         type=int,
         default=100000,
@@ -361,6 +369,7 @@ if __name__ == "__main__":
         env,
         buffer,
         num_steps=args.num_steps,
+        transitions_per_step=args.transitions_per_step,
         max_episode_steps=args.max_episode_steps,
         batch_size=args.batch_size,
         tau=args.tau,

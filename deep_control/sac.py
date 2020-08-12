@@ -360,7 +360,11 @@ def learn_discrete(
         actor_optimizer.step()
 
         # alpha update
-        alpha_loss = torch.sum(logp_a.exp().detach()*(-alpha * (logp_a + target_entropy).detach()), dim=1, keepdim=True).mean()
+        alpha_loss = torch.sum(
+            logp_a.exp().detach() * (-alpha * (logp_a + target_entropy).detach()),
+            dim=1,
+            keepdim=True,
+        ).mean()
         log_alpha_optimizer.zero_grad()
         alpha_loss.backward()
         log_alpha_optimizer.step()

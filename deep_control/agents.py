@@ -95,7 +95,7 @@ class TD3Agent:
         self.actor.eval()
         with torch.no_grad():
             action = self.actor(state)
-        return self.process_state(action)
+        return self.process_act(action)
 
     def collection_forward(self, state):
         return self.forward(state)
