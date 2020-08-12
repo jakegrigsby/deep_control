@@ -5,7 +5,7 @@ import gym
 import deep_control as dc
 
 
-def main():
+def train_sacd_on_atari():
     parser = argparse.ArgumentParser()
 
     # add atari-related cl args
@@ -16,14 +16,15 @@ def main():
     args = parser.parse_args()
     args.discrete_actions = True
 
+    # create env
     env = dc.envs.load_atari(**vars(args))
 
+    # create agent
     obs_shape = env.observation_space.shape
     actions = env.action_space.n
-
     agent = dc.agents.PixelSACDAgent(obs_shape, actions)
 
-    # select a replay buffer
+    # create replay buffer
     if args.prioritized_replay:
         buffer_t = dc.replay.PrioritizedReplayBuffer
     else:
@@ -31,7 +32,7 @@ def main():
     buffer = buffer_t(
         args.buffer_size,
         state_shape=env.observation_space.shape,
-        state_dtype=int,
+        state_dtype=float,
         action_shape=(1,),
     )
 
@@ -42,4 +43,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    train_sacd_on_atari()
