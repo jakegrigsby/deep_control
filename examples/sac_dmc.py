@@ -4,8 +4,8 @@ import deep_control as dc
 
 
 def train_dmc_sac(args):
-    train_env = dc.envs.load_dmc(**vars(args), seed=231)
-    test_env = dc.envs.load_dmc(**vars(args), seed=231)
+    train_env = dc.envs.load_dmc(**vars(args))
+    test_env = dc.envs.load_dmc(**vars(args))
 
     obs_shape = train_env.observation_space.shape
     action_shape = train_env.action_space.shape

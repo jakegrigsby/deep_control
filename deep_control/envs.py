@@ -72,6 +72,7 @@ def add_gym_args(parser):
     Add a --env cl flag to an argparser
     """
     parser.add_argument("--env", type=str, default="Pendulum-v0")
+    parser.add_argument("--seed", type=int, default=231)
 
 
 def load_gym(env_id, seed=None, **_):
@@ -107,6 +108,7 @@ def add_dmc_args(parser):
     parser.add_argument("--frame_stack", type=int, default=4)
     parser.add_argument("--channels_last", action="store_true")
     parser.add_argument("--rgb", action="store_true")
+    parser.add_argument("--seed", type=int, default=231)
 
 
 def add_atari_args(parser):
@@ -118,6 +120,7 @@ def add_atari_args(parser):
     parser.add_argument("--rgb", action="store_true")
     parser.add_argument("--normalize", action="store_true")
     parser.add_argument("--frame_stack", type=int, default=4)
+    parser.add_argument("--seed", type=int, default=231)
 
 
 def load_atari(

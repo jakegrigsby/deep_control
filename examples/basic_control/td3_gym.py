@@ -5,8 +5,8 @@ import deep_control as dc
 
 def train_gym_td3(args):
     # same training and testing seed
-    train_env = dc.envs.load_gym(args.env, seed=231)
-    test_env = dc.envs.load_gym(args.env, seed=231)
+    train_env = dc.envs.load_gym(args.env, args.seed)
+    test_env = dc.envs.load_gym(args.env, args.seed)
 
     state_space = train_env.observation_space
     action_space = train_env.action_space

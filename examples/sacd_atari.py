@@ -7,8 +7,8 @@ import deep_control as dc
 
 def train_atari_sacd(args):
     # create envs. Note use of the same seed
-    train_env = dc.envs.load_atari(**vars(args), seed=231)
-    test_env = dc.envs.load_atari(**vars(args), seed=231)
+    train_env = dc.envs.load_atari(**vars(args))
+    test_env = dc.envs.load_atari(**vars(args))
 
     # create agent
     obs_shape = env.observation_space.shape
