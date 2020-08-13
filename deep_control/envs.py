@@ -97,12 +97,16 @@ def add_dmc_args(parser):
     """
     parser.add_argument("--domain_name", type=str, default="fish")
     parser.add_argument("--task_name", type=str, default="swim")
-    parser.add_argument("--from_pixels", action="store_true", help="Use image observations")
+    parser.add_argument(
+        "--from_pixels", action="store_true", help="Use image observations"
+    )
     parser.add_argument("--height", type=int, default=84)
     parser.add_argument("--width", type=int, default=84)
     parser.add_argument("--camera_id", type=int, default=0)
     parser.add_argument("--frame_skip", type=int, default=1)
+    parser.add_argument("--frame_stack", type=int, default=4)
     parser.add_argument("--channels_last", action="store_true")
+    parser.add_argument("--rgb", action="store_true")
 
 
 def add_atari_args(parser):
@@ -172,11 +176,13 @@ def load_dmc(
     task_name,
     seed=None,
     from_pixels=False,
+    frame_stack=1,
     height=84,
     width=84,
     camera_id=0,
     frame_skip=1,
     channels_last=False,
+    rgb=False,
     **_,
 ):
     """
@@ -190,7 +196,7 @@ def load_dmc(
 
     if seed is None:
         seed = random.randint(1, 100)
-    return dmc2gym.make(
+    env = dmc2gym.make(
         domain_name=domain_name,
         task_name=task_name,
         from_pixels=from_pixels,
@@ -199,8 +205,15 @@ def load_dmc(
         camera_id=camera_id,
         visualize_reward=False,
         frame_skip=frame_skip,
-        channels_first=not channels_last,
+        channels_first=not channels_last
+        if rgb
+        else False,  # if we're using RGB, set the channel order here
     )
+    if not rgb and from_pixels:
+        env = gym.wrappers.GrayScaleObservation(env)
+    if frame_stack > 1 and from_pixels:
+        env = gym.wrappers.FrameStack(env, num_stack=frame_stack)
+    return env
 
 
 def load_exp(env_id, algo_type):

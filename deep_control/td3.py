@@ -135,12 +135,12 @@ def td3(
                 update_policy=update_policy,
             )
 
-        # move target model towards training model
-        if update_policy:
-            utils.soft_update(target_agent.actor, agent.actor, tau)
-            # original td3 impl only updates critic targets with the actor...
-            utils.soft_update(target_agent.critic1, agent.critic1, tau)
-            utils.soft_update(target_agent.critic2, agent.critic2, tau)
+            # move target model towards training model
+            if update_policy:
+                utils.soft_update(target_agent.actor, agent.actor, tau)
+                # original td3 impl only updates critic targets with the actor...
+                utils.soft_update(target_agent.critic1, agent.critic1, tau)
+                utils.soft_update(target_agent.critic2, agent.critic2, tau)
 
         # decay td regularization
         td_reg_coeff *= td_reg_coeff_decay

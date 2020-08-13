@@ -137,11 +137,11 @@ def sac(
                 update_policy=update_policy,
             )
 
-        # move target model towards training model
-        if update_policy:
-            utils.soft_update(target_agent.actor, agent.actor, tau)
-            utils.soft_update(target_agent.critic1, agent.critic1, tau)
-            utils.soft_update(target_agent.critic2, agent.critic2, tau)
+            # move target model towards training model
+            if update_policy:
+                utils.soft_update(target_agent.actor, agent.actor, tau)
+                utils.soft_update(target_agent.critic1, agent.critic1, tau)
+                utils.soft_update(target_agent.critic2, agent.critic2, tau)
 
         if step % eval_interval == 0 or step == num_steps - 1:
             mean_return = run.evaluate_agent(
