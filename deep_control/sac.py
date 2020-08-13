@@ -17,12 +17,13 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def sac(
     agent,
-    env,
     buffer,
+    train_env,
+    test_env,
     num_steps=1_000_000,
     transitions_per_step=1,
     max_episode_steps=100_000,
-    batch_size=256,
+    batch_size=128,
     tau=0.005,
     actor_lr=1e-4,
     critic_lr=1e-3,
@@ -80,11 +81,11 @@ def sac(
 
     if not discrete_actions:
         # continuous action learning
-        target_entropy = -env.action_space.shape[0]
+        target_entropy = -train_env.action_space.shape[0]
         learn_fn = learn
     else:
         # discrete action learning
-        target_entropy = -math.log(1.0 / env.action_space.shape[0]) * 0.98
+        target_entropy = -math.log(1.0 / train_env.action_space.shape[0]) * 0.98
         learn_fn = learn_discrete
 
     if save_to_disk or log_to_disk:
@@ -93,7 +94,7 @@ def sac(
         # create tb writer, save hparams
         writer = tensorboardX.SummaryWriter(save_dir)
 
-    run.warmup_buffer(buffer, env, warmup_steps, max_episode_steps)
+    run.warmup_buffer(buffer, train_env, warmup_steps, max_episode_steps)
 
     done = True
     learning_curve = []
@@ -105,13 +106,13 @@ def sac(
     for step in steps_iter:
         for _ in range(transitions_per_step):
             if done:
-                state = env.reset()
+                state = train_env.reset()
                 steps_this_ep = 0
                 done = False
             action, _ = agent.stochastic_forward(
                 state, track_gradients=False, process_states=True
             )
-            next_state, reward, done, info = env.step(action)
+            next_state, reward, done, info = train_env.step(action)
             buffer.push(state, action, reward, next_state, done)
             state = next_state
             steps_this_ep += 1
@@ -145,7 +146,7 @@ def sac(
 
         if step % eval_interval == 0 or step == num_steps - 1:
             mean_return = run.evaluate_agent(
-                agent, env, eval_episodes, max_episode_steps, render
+                agent, test_env, eval_episodes, max_episode_steps, render
             )
             if log_to_disk:
                 writer.add_scalar("return", mean_return, step * transitions_per_step)
@@ -513,57 +514,4 @@ def add_args(parser):
         "--discrete_actions",
         action="store_true",
         help="enable SAC Discrete update function for discrete action spaces",
-    )
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--env", type=str, default="Pendulum-v0", help="Training environment gym id"
-    )
-    add_args(parser)
-    args = parser.parse_args()
-    agent, env = envs.load_exp(args.env, "sac")
-
-    if args.prioritized_replay:
-        buffer_t = replay.PrioritizedReplayBuffer
-    else:
-        buffer_t = replay.ReplayBuffer
-    buffer = buffer_t(
-        args.buffer_size,
-        state_shape=env.observation_space.shape,
-        action_shape=env.action_space.shape,
-    )
-
-    print(f"Using Device: {device}")
-    agent = sac(
-        agent,
-        env,
-        buffer,
-        num_steps=args.num_steps,
-        transitions_per_step=args.transitions_per_step,
-        max_episode_steps=args.max_episode_steps,
-        batch_size=args.batch_size,
-        tau=args.tau,
-        actor_lr=args.actor_lr,
-        critic_lr=args.critic_lr,
-        gamma=args.gamma,
-        eval_interval=args.eval_interval,
-        eval_episodes=args.eval_episodes,
-        warmup_steps=args.warmup_steps,
-        actor_clip=args.actor_clip,
-        critic_clip=args.critic_clip,
-        actor_l2=args.actor_l2,
-        critic_l2=args.critic_l2,
-        init_alpha=args.init_alpha,
-        alpha_lr=args.alpha_lr,
-        delay=args.delay,
-        save_interval=args.save_interval,
-        name=args.name,
-        render=args.render,
-        verbosity=args.verbosity,
-        gradient_updates_per_step=args.gradient_updates_per_step,
-        save_to_disk=not args.skip_save_to_disk,
-        log_to_disk=not args.skip_log_to_disk,
-        discrete_actions=args.discrete_actions,
     )

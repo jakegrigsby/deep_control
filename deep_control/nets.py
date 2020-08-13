@@ -183,7 +183,7 @@ class BaselineDiscreteActor(nn.Module):
     def _sample_from(self, act_p):
         act_dist = Categorical(act_p)
         act = act_dist.sample().view(-1, 1)
-        logp_a = torch.log(act_p + 1e-7)
+        logp_a = torch.log(act_p + 1e-8)
         return act, logp_a
 
     def forward(self, state, stochastic=False):

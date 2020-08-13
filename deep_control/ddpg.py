@@ -16,12 +16,13 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def ddpg(
     agent,
-    env,
+    train_env,
+    test_env,
     buffer,
     num_steps=1_000_000,
     transitions_per_step=1,
     max_episode_steps=100_000,
-    batch_size=64,
+    batch_size=128,
     tau=0.005,
     actor_lr=1e-4,
     critic_lr=1e-3,
@@ -44,6 +45,7 @@ def ddpg(
     save_to_disk=True,
     verbosity=0,
     gradient_updates_per_step=1,
+    **_,
 ):
     """
     Train `agent` on `env` with the Deep Deterministic Policy Gradient algorithm.
@@ -51,7 +53,7 @@ def ddpg(
     Reference: https://arxiv.org/abs/1509.02971
     """
     agent.to(device)
-    max_act = env.action_space.high[0]
+    max_act = train_env.action_space.high[0]
 
     # initialize target networks
     target_agent = copy.deepcopy(agent)
@@ -60,7 +62,7 @@ def ddpg(
     utils.hard_update(target_agent.critic, agent.critic)
 
     random_process = utils.GaussianExplorationNoise(
-        size=env.action_space.shape,
+        size=train_env.action_space.shape,
         start_scale=sigma_start,
         final_scale=sigma_final,
         steps_annealed=sigma_anneal,
@@ -80,7 +82,7 @@ def ddpg(
         # create tb writer, save hparams
         writer = tensorboardX.SummaryWriter(save_dir)
 
-    run.warmup_buffer(buffer, env, warmup_steps, max_episode_steps)
+    run.warmup_buffer(buffer, train_env, warmup_steps, max_episode_steps)
 
     done = True
     learning_curve = []
@@ -92,13 +94,13 @@ def ddpg(
     for step in steps_iter:
         for _ in range(transitions_per_step):
             if done:
-                state = env.reset()
+                state = train_env.reset()
                 random_process.reset_states()
                 steps_this_ep = 0
                 done = False
             action = agent.forward(state)
             noisy_action = run.exploration_noise(action, random_process, max_act)
-            next_state, reward, done, info = env.step(noisy_action)
+            next_state, reward, done, info = train_env.step(noisy_action)
             buffer.push(state, noisy_action, reward, next_state, done)
             state = next_state
             steps_this_ep += 1
@@ -124,7 +126,7 @@ def ddpg(
 
         if step % eval_interval == 0 or step == num_steps - 1:
             mean_return = run.evaluate_agent(
-                agent, env, eval_episodes, max_episode_steps, render
+                agent, test_env, eval_episodes, max_episode_steps, render
             )
             # because we usually care about logging the actual # of env interactions
             # as the x axis, steps = step * transitions_per_step
@@ -286,56 +288,3 @@ def add_args(parser):
     )
     parser.add_argument("--prioritized_replay", action="store_true")
     parser.add_argument("--buffer_size", type=int, default=1_000_000)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--env", type=str, default="Pendulum-v0", help="Training environment gym id"
-    )
-    add_args(parser)
-    args = parser.parse_args()
-    agent, env = envs.load_exp(args.env, "ddpg")
-
-    if args.prioritized_replay:
-        buffer_t = replay.PrioritizedReplayBuffer
-    else:
-        buffer_t = replay.ReplayBuffer
-    buffer = buffer_t(
-        args.buffer_size,
-        state_shape=env.observation_space.shape,
-        action_shape=env.action_space.shape,
-    )
-
-    print(f"Using Device: {device}")
-    agent = ddpg(
-        agent,
-        env,
-        buffer,
-        num_steps=args.num_steps,
-        transitions_per_step=args.transitions_per_step,
-        max_episode_steps=args.max_episode_steps,
-        batch_size=args.batch_size,
-        tau=args.tau,
-        actor_lr=args.actor_lr,
-        critic_lr=args.critic_lr,
-        gamma=args.gamma,
-        sigma_start=args.sigma_start,
-        sigma_final=args.sigma_final,
-        sigma_anneal=args.sigma_anneal,
-        theta=args.theta,
-        eval_interval=args.eval_interval,
-        eval_episodes=args.eval_episodes,
-        warmup_steps=args.warmup_steps,
-        actor_clip=args.actor_clip,
-        critic_clip=args.critic_clip,
-        actor_l2=args.actor_l2,
-        critic_l2=args.critic_l2,
-        save_interval=args.save_interval,
-        render=args.render,
-        name=args.name,
-        save_to_disk=not args.skip_save_to_disk,
-        log_to_disk=not args.skip_log_to_disk,
-        verbosity=args.verbosity,
-        gradient_updates_per_step=args.gradient_updates_per_step,
-    )

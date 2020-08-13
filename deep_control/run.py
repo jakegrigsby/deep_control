@@ -10,7 +10,7 @@ def run_env(agent, env, episodes, max_steps, render=False, verbosity=1):
     if render:
         env.render()
     for episode in range(episodes):
-        episode_return = 0
+        episode_return = 0.0
         state = env.reset()
         done, info = False, {}
         for _ in range(max_steps):
@@ -47,6 +47,7 @@ def collect_experience_by_steps(
     num_steps,
     current_state=None,
     current_done=None,
+    steps_this_ep=None,
     max_rollout_length=None,
     random_process=None,
 ):
@@ -58,8 +59,8 @@ def collect_experience_by_steps(
         done = False
     else:
         done = current_done
-
-    steps_this_ep = 0
+    if steps_this_ep is None:
+        steps_this_ep = 0
     for step in range(num_steps):
         if done:
             state = env.reset()
@@ -76,7 +77,7 @@ def collect_experience_by_steps(
         steps_this_ep += 1
         if max_rollout_length and steps_this_ep >= max_rollout_length:
             done = True
-    return state, done
+    return state, done, steps_this_ep
 
 
 def collect_experience_by_rollouts(
