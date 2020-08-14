@@ -364,7 +364,7 @@ def learn_discrete(
 
         # alpha update
         alpha_loss = torch.sum(
-            logp_a.exp().detach() * ((-alpha * logp_a.detach()) + target_entropy),
+            logp_a.exp().detach() * (-alpha*(logp_a.detach() + target_entropy)),
             dim=1,
             keepdim=True,
         ).mean()
