@@ -1,7 +1,7 @@
 import argparse
 import copy
-import time
 import math
+import time
 
 import gym
 import numpy as np
@@ -17,11 +17,13 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def sac(
     agent,
-    env,
     buffer,
+    train_env,
+    test_env,
     num_steps=1_000_000,
+    transitions_per_step=1,
     max_episode_steps=100_000,
-    batch_size=256,
+    batch_size=128,
     tau=0.005,
     actor_lr=1e-4,
     critic_lr=1e-3,
@@ -43,11 +45,17 @@ def sac(
     verbosity=0,
     gradient_updates_per_step=1,
     init_alpha=0.1,
+    discrete_actions=False,
     **kwargs,
 ):
+    """
+    Train `agent` on `env` with Soft Actor Critic algorithm.
 
+    Reference: https://arxiv.org/abs/1801.01290 and https://arxiv.org/abs/1812.05905
+
+    Also supports discrete action spaces (ref: https://arxiv.org/abs/1910.07207)
+    """
     agent.to(device)
-    max_act = env.action_space.high[0]
 
     # initialize target networks
     target_agent = copy.deepcopy(agent)
@@ -71,13 +79,22 @@ def sac(
 
     log_alpha_optimizer = torch.optim.Adam([log_alpha], lr=alpha_lr)
 
+    if not discrete_actions:
+        # continuous action learning
+        target_entropy = -train_env.action_space.shape[0]
+        learn_fn = learn
+    else:
+        # discrete action learning
+        target_entropy = -math.log(1.0 / train_env.action_space.shape[0]) * 0.98
+        learn_fn = learn_discrete
+
     if save_to_disk or log_to_disk:
         save_dir = utils.make_process_dirs(name)
     if log_to_disk:
         # create tb writer, save hparams
         writer = tensorboardX.SummaryWriter(save_dir)
 
-    run.warmup_buffer(buffer, env, warmup_steps, max_episode_steps)
+    run.warmup_buffer(buffer, train_env, warmup_steps, max_episode_steps)
 
     done = True
     learning_curve = []
@@ -87,23 +104,24 @@ def sac(
         steps_iter = tqdm.tqdm(steps_iter)
 
     for step in steps_iter:
-        if done:
-            state = env.reset()
-            steps_this_ep = 0
-            done = False
-        action, _ = agent.stochastic_forward(
-            state, track_gradients=False, process_states=True
-        )
-        next_state, reward, done, info = env.step(action)
-        buffer.push(state, action, reward, next_state, done)
-        state = next_state
-        steps_this_ep += 1
-        if steps_this_ep >= max_episode_steps:
-            done = True
+        for _ in range(transitions_per_step):
+            if done:
+                state = train_env.reset()
+                steps_this_ep = 0
+                done = False
+            action, _ = agent.stochastic_forward(
+                state, track_gradients=False, process_states=True
+            )
+            next_state, reward, done, info = train_env.step(action)
+            buffer.push(state, action, reward, next_state, done)
+            state = next_state
+            steps_this_ep += 1
+            if steps_this_ep >= max_episode_steps:
+                done = True
 
         update_policy = step % delay == 0
         for _ in range(gradient_updates_per_step):
-            learn(
+            learn_fn(
                 buffer=buffer,
                 target_agent=target_agent,
                 agent=agent,
@@ -112,7 +130,7 @@ def sac(
                 critic2_optimizer=critic2_optimizer,
                 log_alpha=log_alpha,
                 log_alpha_optimizer=log_alpha_optimizer,
-                target_entropy=-env.action_space.shape[0],  # target_entropy = -|A|
+                target_entropy=target_entropy,
                 batch_size=batch_size,
                 gamma=gamma,
                 critic_clip=critic_clip,
@@ -128,12 +146,12 @@ def sac(
 
         if step % eval_interval == 0 or step == num_steps - 1:
             mean_return = run.evaluate_agent(
-                agent, env, eval_episodes, max_episode_steps, render
+                agent, test_env, eval_episodes, max_episode_steps, render
             )
             if log_to_disk:
-                writer.add_scalar("return", mean_return, step)
+                writer.add_scalar("return", mean_return, step * transitions_per_step)
 
-            learning_curve.append((step, mean_return))
+            learning_curve.append((step * transitions_per_step, mean_return))
 
         if step % save_interval == 0 and save_to_disk:
             agent.save(save_dir)
@@ -245,9 +263,130 @@ def learn(
         buffer.update_priorities(priority_idxs, new_priorities)
 
 
+def learn_discrete(
+    buffer,
+    target_agent,
+    agent,
+    actor_optimizer,
+    critic1_optimizer,
+    critic2_optimizer,
+    log_alpha_optimizer,
+    target_entropy,
+    batch_size,
+    log_alpha,
+    gamma,
+    critic_clip,
+    actor_clip,
+    update_policy=True,
+):
+    per = isinstance(buffer, replay.PrioritizedReplayBuffer)
+    if per:
+        batch, imp_weights, priority_idxs = buffer.sample(batch_size)
+        imp_weights = imp_weights.to(device)
+    else:
+        batch = buffer.sample(batch_size)
+
+    # prepare transitions for models
+    state_batch, action_batch, reward_batch, next_state_batch, done_batch = batch
+    state_batch = state_batch.to(device)
+    next_state_batch = next_state_batch.to(device)
+    action_batch = action_batch.to(device)
+    reward_batch = reward_batch.to(device)
+    done_batch = done_batch.to(device)
+
+    agent.train()
+
+    alpha = torch.exp(log_alpha)
+    with torch.no_grad():
+        # create critic targets (clipped double Q learning)
+        action_s1, logp_a1 = agent.stochastic_forward(
+            next_state_batch, track_gradients=False, process_states=False
+        )
+        target_value_s1 = (
+            logp_a1.exp()
+            * (
+                torch.min(
+                    target_agent.critic1(next_state_batch),
+                    target_agent.critic2(next_state_batch),
+                )
+                - (alpha * logp_a1)
+            )
+        ).sum(1, keepdim=True)
+        td_target = reward_batch + gamma * (1.0 - done_batch) * (target_value_s1)
+
+    # update first critic
+    agent_critic1_pred = agent.critic1(state_batch).gather(1, action_batch.long())
+    td_error1 = td_target - agent_critic1_pred
+    if per:
+        critic1_loss = (imp_weights * 0.5 * (td_error1 ** 2)).mean()
+    else:
+        critic1_loss = 0.5 * (td_error1 ** 2).mean()
+    critic1_optimizer.zero_grad()
+    critic1_loss.backward()
+    if critic_clip:
+        torch.nn.utils.clip_grad_norm_(agent.critic1.parameters(), critic_clip)
+    critic1_optimizer.step()
+
+    # update second critic
+    agent_critic2_pred = agent.critic2(state_batch).gather(1, action_batch.long())
+    td_error2 = td_target - agent_critic2_pred
+    if per:
+        critic2_loss = (imp_weights * 0.5 * (td_error2 ** 2)).mean()
+    else:
+        critic2_loss = 0.5 * (td_error2 ** 2).mean()
+    critic2_optimizer.zero_grad()
+    critic2_loss.backward()
+    if critic_clip:
+        torch.nn.utils.clip_grad_norm_(agent.critic2.parameters(), critic_clip)
+    critic2_optimizer.step()
+
+    if update_policy:
+        # actor update
+        agent_actions, logp_a = agent.stochastic_forward(
+            state_batch, track_gradients=True, process_states=False
+        )
+        actor_loss = (
+            (
+                logp_a.exp()
+                * (
+                    (alpha.detach() * logp_a)
+                    - torch.min(agent.critic1(state_batch), agent.critic2(state_batch))
+                )
+            )
+            .sum(1, keepdim=True)
+            .mean()
+        )
+        actor_optimizer.zero_grad()
+        actor_loss.backward()
+        if actor_clip:
+            torch.nn.utils.clip_grad_norm_(agent.actor.parameters(), actor_clip)
+        actor_optimizer.step()
+
+        # alpha update
+        alpha_loss = torch.sum(
+            logp_a.exp().detach() * ((-alpha * logp_a.detach()) + target_entropy),
+            dim=1,
+            keepdim=True,
+        ).mean()
+        log_alpha_optimizer.zero_grad()
+        alpha_loss.backward()
+        log_alpha_optimizer.step()
+
+    if per:
+        new_priorities = (abs(td_error1) + 1e-5).cpu().detach().squeeze(1).numpy()
+        buffer.update_priorities(priority_idxs, new_priorities)
+
+
 def add_args(parser):
     parser.add_argument(
         "--num_steps", type=int, default=10 ** 6, help="number of steps in training"
+    )
+    parser.add_argument(
+        "--transitions_per_step",
+        type=int,
+        default=1,
+        help="env transitions per training step. Defaults to 1, but will need to \
+        be set higher for repaly ratios < 1",
     )
     parser.add_argument(
         "--max_episode_steps",
@@ -300,67 +439,79 @@ def add_args(parser):
     parser.add_argument(
         "--warmup_steps", type=int, default=1000, help="warmup length, in steps"
     )
-    parser.add_argument("--render", action="store_true")
-    parser.add_argument("--actor_clip", type=float, default=None)
-    parser.add_argument("--critic_clip", type=float, default=None)
-    parser.add_argument("--name", type=str, default="sac_run")
-    parser.add_argument("--actor_l2", type=float, default=0.0)
-    parser.add_argument("--critic_l2", type=float, default=0.0)
-    parser.add_argument("--delay", type=int, default=1)
-    parser.add_argument("--save_interval", type=int, default=100_000)
-    parser.add_argument("--verbosity", type=int, default=1)
-    parser.add_argument("--gradient_updates_per_step", type=int, default=1)
-    parser.add_argument("--prioritized_replay", action="store_true")
-    parser.add_argument("--skip_save_to_disk", action="store_true")
-    parser.add_argument("--skip_log_to_disk", action="store_true")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--env", type=str, default="Pendulum-v0", help="Training environment gym id"
+        "--render",
+        action="store_true",
+        help="flag to enable env rendering during training",
     )
-    add_args(parser)
-    args = parser.parse_args()
-    agent, env = envs.load_env(args.env, "sac")
-
-    if args.prioritized_replay:
-        buffer_t = replay.PrioritizedReplayBuffer
-    else:
-        buffer_t = replay.ReplayBuffer
-    buffer = buffer_t(
-        args.buffer_size,
-        state_shape=env.observation_space.shape,
-        action_shape=env.action_space.shape,
+    parser.add_argument(
+        "--actor_clip",
+        type=float,
+        default=None,
+        help="gradient clipping for actor updates",
     )
-
-    print(f"Using Device: {device}")
-    agent = sac(
-        agent,
-        env,
-        buffer,
-        num_steps=args.num_steps,
-        max_episode_steps=args.max_episode_steps,
-        batch_size=args.batch_size,
-        tau=args.tau,
-        actor_lr=args.actor_lr,
-        critic_lr=args.critic_lr,
-        gamma=args.gamma,
-        eval_interval=args.eval_interval,
-        eval_episodes=args.eval_episodes,
-        warmup_steps=args.warmup_steps,
-        actor_clip=args.actor_clip,
-        critic_clip=args.critic_clip,
-        actor_l2=args.actor_l2,
-        critic_l2=args.critic_l2,
-        init_alpha=args.init_alpha,
-        alpha_lr=args.alpha_lr,
-        delay=args.delay,
-        save_interval=args.save_interval,
-        name=args.name,
-        render=args.render,
-        verbosity=args.verbosity,
-        gradient_updates_per_step=args.gradient_updates_per_step,
-        save_to_disk=not args.skip_save_to_disk,
-        log_to_disk=not args.skip_log_to_disk,
+    parser.add_argument(
+        "--critic_clip",
+        type=float,
+        default=None,
+        help="gradient clipping for critic updates",
+    )
+    parser.add_argument(
+        "--name", type=str, default="sac_run", help="dir name for saves"
+    )
+    parser.add_argument(
+        "--actor_l2",
+        type=float,
+        default=0.0,
+        help="L2 regularization coeff for actor network",
+    )
+    parser.add_argument(
+        "--critic_l2",
+        type=float,
+        default=0.0,
+        help="L2 regularization coeff for critic network",
+    )
+    parser.add_argument(
+        "--delay",
+        type=int,
+        default=1,
+        help="How many steps to go between actor updates",
+    )
+    parser.add_argument(
+        "--save_interval",
+        type=int,
+        default=100_000,
+        help="How many steps to go between saving the agent params to disk",
+    )
+    parser.add_argument(
+        "--verbosity",
+        type=int,
+        default=1,
+        help="verbosity > 0 displays a progress bar during training",
+    )
+    parser.add_argument(
+        "--gradient_updates_per_step",
+        type=int,
+        default=1,
+        help="how many gradient updates to make per env step",
+    )
+    parser.add_argument(
+        "--prioritized_replay",
+        action="store_true",
+        help="flag that enables use of prioritized experience replay",
+    )
+    parser.add_argument(
+        "--skip_save_to_disk",
+        action="store_true",
+        help="flag to skip saving agent params to disk during training",
+    )
+    parser.add_argument(
+        "--skip_log_to_disk",
+        action="store_true",
+        help="flag to skip saving agent performance logs to disk during training",
+    )
+    parser.add_argument(
+        "--discrete_actions",
+        action="store_true",
+        help="enable SAC Discrete update function for discrete action spaces",
     )

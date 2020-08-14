@@ -166,13 +166,12 @@ class MinSegmentTree(SegmentTree):
 
 
 class ReplayBufferStorage:
-    def __init__(self, size, obs_shape, action_shape):
-        if len(obs_shape) > 1:
-            self.s_dtype = torch.uint8
-        else:
-            self.s_dtype = torch.float32
+    def __init__(self, size, obs_shape, act_shape, obs_dtype=torch.float32):
+        self.s_dtype = obs_dtype
+
+        # buffer arrays
         self.s_stack = torch.zeros((size,) + obs_shape, dtype=self.s_dtype)
-        self.action_stack = torch.zeros((size,) + action_shape, dtype=torch.float32)
+        self.action_stack = torch.zeros((size,) + act_shape, dtype=torch.float32)
         self.reward_stack = torch.zeros((size, 1), dtype=torch.float32)
         self.s1_stack = torch.zeros((size,) + obs_shape, dtype=self.s_dtype)
         self.done_stack = torch.zeros((size, 1), dtype=torch.int)
@@ -195,6 +194,12 @@ class ReplayBufferStorage:
             r, d = [r], [d]
 
         if not isinstance(s, torch.Tensor):
+            # convert states to numpy (checking for LazyFrames)
+            if not isinstance(s, np.ndarray):
+                s = np.asarray(s)
+            if not isinstance(s_1, np.ndarray):
+                s_1 = np.asarray(s_1)
+
             # convert to torch tensors
             s = torch.from_numpy(s)
             a = torch.from_numpy(a).float()
@@ -202,10 +207,11 @@ class ReplayBufferStorage:
             s_1 = torch.from_numpy(s_1)
             d = torch.Tensor(d).int()
 
+            # make sure tensors are floats not doubles
             if self.s_dtype is torch.float32:
-                # make sure states aren't Doubles
                 s = s.float()
                 s_1 = s_1.float()
+
         else:
             # move to cpu
             s = s.cpu()
@@ -236,10 +242,10 @@ class ReplayBufferStorage:
                 "ReplayBufferStorage getitem called with indices object that is not iterable"
             )
 
-        # converting states to float here instead of inside the learning loop
+        # converting states and actions to float here instead of inside the learning loop
         # of each agent seems fine for now.
         state = self.s_stack[indices].float()
-        action = self.action_stack[indices]
+        action = self.action_stack[indices].float()
         reward = self.reward_stack[indices]
         next_state = self.s1_stack[indices].float()
         done = self.done_stack[indices]
@@ -256,23 +262,33 @@ class ReplayBufferStorage:
 
 
 class ReplayBuffer:
-    def __init__(self, size, state_shape=None, action_shape=None):
-        self._storage = None
+    def __init__(self, size, state_shape=None, action_shape=None, state_dtype=float):
         self._maxsize = size
         self.state_shape = state_shape
+        self.state_dtype = self._convert_dtype(state_dtype)
         self.action_shape = action_shape
+        self._storage = None
         assert self.state_shape, "Must provide shape of state space to ReplayBuffer"
         assert self.action_shape, "Must provide shape of action space to ReplayBuffer"
+
+    def _convert_dtype(self, dtype):
+        if dtype is int:
+            return torch.uint8
+        elif dtype is float:
+            return torch.float32
+        else:
+            raise ValueError(f"Uncreocgnized replay buffer dtype: {dtype}")
 
     def __len__(self):
         return len(self._storage)
 
     def push(self, state, action, reward, next_state, done):
-        if not self._storage:
+        if self._storage is None:
             self._storage = ReplayBufferStorage(
                 self._maxsize,
                 obs_shape=self.state_shape,
-                action_shape=self.action_shape,
+                act_shape=self.action_shape,
+                obs_dtype=self.state_dtype,
             )
         return self._storage.add(state, action, reward, next_state, done)
 
@@ -285,8 +301,12 @@ class ReplayBuffer:
 
 
 class PrioritizedReplayBuffer(ReplayBuffer):
-    def __init__(self, size, state_shape, action_shape, alpha=0.6, beta=1.0):
-        super(PrioritizedReplayBuffer, self).__init__(size, state_shape, action_shape)
+    def __init__(
+        self, size, state_shape, action_shape, state_dtype=float, alpha=0.6, beta=1.0
+    ):
+        super(PrioritizedReplayBuffer, self).__init__(
+            size, state_shape, action_shape, state_dtype
+        )
         assert alpha >= 0
         self.alpha = alpha
         self.beta = beta
