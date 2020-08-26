@@ -1,5 +1,6 @@
 import argparse
 import random
+from collections import deque
 
 import gym
 import numpy as np
@@ -43,6 +44,35 @@ class DiscreteActionWrapper(gym.ActionWrapper):
             if len(action.shape) > 0:
                 action = action[0]
         return int(action)
+
+
+class FrameStack(gym.Wrapper):
+    def __init__(self, env, num_stack):
+        gym.Wrapper.__init__(self, env)
+        self._k = num_stack
+        self._frames = deque([], maxlen=num_stack)
+        shp = env.observation_space.shape
+        self.observation_space = gym.spaces.Box(
+            low=0,
+            high=1,
+            shape=((shp[0] * num_stack,) + shp[1:]),
+            dtype=env.observation_space.dtype,
+        )
+
+    def reset(self):
+        obs = self.env.reset()
+        for _ in range(self._k):
+            self._frames.append(obs)
+        return self._get_obs()
+
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        self._frames.append(obs)
+        return self._get_obs(), reward, done, info
+
+    def _get_obs(self):
+        assert len(self._frames) == self._k
+        return np.concatenate(list(self._frames), axis=0)
 
 
 class GoalBasedWrapper(gym.ObservationWrapper):
@@ -153,13 +183,15 @@ def load_atari(
         frame_skip=frame_skip,
         screen_size=screen_size,
         terminal_on_life_loss=terminal_on_life_loss,
-        grayscale_obs=not rgb,
+        grayscale_obs=False,  # use GrayScale wrapper instead...
         scale_obs=normalize,
     )
+    if not rgb:
+        env = gym.wrappers.GrayScaleObservation(env, keep_dim=True)
     if clip_reward:
         env = ClipReward(env)
-    if frame_stack > 1:
-        env = gym.wrappers.FrameStack(env, num_stack=frame_stack)
+    env = ChannelsFirstWrapper(env)
+    env = FrameStack(env, num_stack=frame_stack)
     env = DiscreteActionWrapper(env)
     return env
 
@@ -213,9 +245,10 @@ def load_dmc(
         else False,  # if we're using RGB, set the channel order here
     )
     if not rgb and from_pixels:
-        env = gym.wrappers.GrayScaleObservation(env)
-    if frame_stack > 1 and from_pixels:
-        env = gym.wrappers.FrameStack(env, num_stack=frame_stack)
+        env = gym.wrappers.GrayScaleObservation(env, keep_dim=True)
+        env = ChannelsFirstWrapper(env)
+    if from_pixels:
+        env = FrameStack(env, num_stack=frame_stack)
     return env
 
 

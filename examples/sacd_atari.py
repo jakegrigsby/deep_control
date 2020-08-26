@@ -11,8 +11,8 @@ def train_atari_sacd(args):
     test_env = dc.envs.load_atari(**vars(args))
 
     # create agent
-    obs_shape = env.observation_space.shape
-    actions = env.action_space.n
+    obs_shape = train_env.observation_space.shape
+    actions = train_env.action_space.n
     agent = dc.agents.PixelSACDAgent(obs_shape, actions)
 
     # create replay buffer
@@ -22,13 +22,15 @@ def train_atari_sacd(args):
         buffer_t = dc.replay.ReplayBuffer
     buffer = buffer_t(
         args.buffer_size,
-        state_shape=env.observation_space.shape,
+        state_shape=train_env.observation_space.shape,
         state_dtype=int,
         action_shape=(1,),
     )
 
     # run SAC
-    dc.sac.sac(agent=agent, env=env, buffer=buffer, **vars(args))
+    dc.sac.sac(
+        agent=agent, train_env=train_env, test_env=test_env, buffer=buffer, **vars(args)
+    )
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ from . import agents, envs, utils
 def run_env(agent, env, episodes, max_steps, render=False, verbosity=1):
     episode_return_history = []
     if render:
-        env.render()
+        env.render("rgb_array")
     for episode in range(episodes):
         episode_return = 0.0
         state = env.reset()
@@ -19,7 +19,7 @@ def run_env(agent, env, episodes, max_steps, render=False, verbosity=1):
             action = agent.forward(state)
             state, reward, done, info = env.step(action)
             if render:
-                env.render()
+                env.render("rgb_array")
             episode_return += reward
         if verbosity:
             print(f"Episode {episode}:: {episode_return}")
@@ -35,7 +35,9 @@ def evaluate_agent(
     agent, env, eval_episodes, max_episode_steps, render=False, verbosity=0
 ):
     agent.eval()
-    returns = run_env(agent, env, eval_episodes, max_episode_steps, render, verbosity=0)
+    returns = run_env(
+        agent, env, eval_episodes, max_episode_steps, render, verbosity=verbosity
+    )
     mean_return = returns.mean()
     return mean_return
 
