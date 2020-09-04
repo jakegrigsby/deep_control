@@ -23,8 +23,7 @@ class ChannelsFirstWrapper(gym.ObservationWrapper):
 
     def observation(self, frame):
         frame = np.transpose(frame, (2, 0, 1))
-        # this is a trick to make numpy put this array in contiguous memory
-        return frame - np.zeros_like(frame)
+        return np.ascontiguousarray(frame)
 
 
 class DiscreteActionWrapper(gym.ActionWrapper):

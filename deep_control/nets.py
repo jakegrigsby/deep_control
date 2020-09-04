@@ -14,7 +14,9 @@ class BaselineEncoder(nn.Module):
         self.fc1 = nn.Linear(inp_size, 400)
 
     def forward(self, x):
-        return F.relu(self.fc1(x))
+        h = F.relu(self.fc1(x))
+        self.rep = h
+        return h
 
 
 class BaselineActor(nn.Module):
@@ -28,6 +30,7 @@ class BaselineActor(nn.Module):
     def forward(self, state):
         x = self.encoder(state)
         x = F.relu(self.fc(x))
+        self.rep = x
         act = self.max_act * torch.tanh(self.out(x))
         return act
 
@@ -43,6 +46,7 @@ class BaselineCritic(nn.Module):
         x = self.encoder(state)
         x = torch.cat((x, action), dim=1)
         x = F.relu(self.fc(x))
+        self.rep = x
         val = self.out(x)
         return val
 
@@ -70,6 +74,7 @@ class StochasticActor(nn.Module):
     def forward(self, state, stochastic=False):
         x = self.encoder(state)
         x = F.relu(self.fc(x))
+        self.rep = x
         mu = self.mu(x)
         log_std = self.log_std(x)
         if not stochastic:
@@ -103,6 +108,7 @@ class BaselinePixelEncoder(nn.Module):
         x = x.view(x.size(0), -1)
         x = F.relu(self.fc(x))
         x = self.ln(x)
+        self.rep = x
         return x
 
 
@@ -151,6 +157,7 @@ class BaselineDiscreteCritic(nn.Module):
     def forward(self, state):
         x = self.encoder(state)
         x = F.relu(self.fc(x))
+        self.rep = x
         val = self.v_out(x)
         advantage = self.a_out(x)
         return val + (advantage - advantage.mean(1, keepdim=True))
@@ -182,6 +189,7 @@ class BaselineDiscreteActor(nn.Module):
     def forward(self, state, stochastic=False):
         x = self.encoder(state)
         x = F.relu(self.fc(x))
+        self.rep = x
         act_p = F.softmax(self.act_p(x), dim=1)
         if not stochastic:
             act = torch.argmax(act_p, dim=1)
