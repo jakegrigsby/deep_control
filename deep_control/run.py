@@ -38,6 +38,7 @@ def evaluate_agent(
     returns = run_env(
         agent, env, eval_episodes, max_episode_steps, render, verbosity=verbosity
     )
+    agent.train()
     mean_return = returns.mean()
     return mean_return
 
