@@ -1,9 +1,10 @@
+import math
+
 import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
-from torch.distributions.categorical import Categorical
-from torch.distributions.normal import Normal
+from torch import distributions as pyd
 
 from . import utils
 
@@ -51,39 +52,76 @@ class BaselineCritic(nn.Module):
         return val
 
 
-class StochasticActor(nn.Module):
-    def __init__(self, obs_size, action_size, max_action):
-        super().__init__()
-        self.encoder = BaselineEncoder(obs_size)
-        self.fc = nn.Linear(400, 300)
-        self.mu = nn.Linear(300, action_size)
-        self.log_std = nn.Linear(300, action_size)
-        self.max_act = max_action
+"""
+Credit for actor distribution code: https://github.com/denisyarats/pytorch_sac_ae/blob/master/sac_ae.py
+"""
 
-    def _sample_from(self, mu, log_std):
-        std = torch.exp(torch.clamp(log_std, -20, 2))
-        dist = Normal(mu, std)
-        unsquashed_act = dist.rsample()
-        logp_a = dist.log_prob(unsquashed_act).sum(axis=-1)
-        logp_a -= (
-            2 * (np.log(2) - unsquashed_act - F.softplus(-2 * unsquashed_act))
-        ).sum(axis=1)
-        logp_a = logp_a.unsqueeze(1)
-        return unsquashed_act, logp_a
+
+class TanhTransform(pyd.transforms.Transform):
+    domain = pyd.constraints.real
+    codomain = pyd.constraints.interval(-1.0, 1.0)
+    bijective = True
+    sign = +1
+
+    def __init__(self, cache_size=1):
+        super().__init__(cache_size=cache_size)
+
+    @staticmethod
+    def atanh(x):
+        return 0.5 * (x.log1p() - (-x).log1p())
+
+    def __eq__(self, other):
+        return isinstance(other, TanhTransform)
+
+    def _call(self, x):
+        return x.tanh()
+
+    def _inverse(self, y):
+        return self.atanh(y)
+
+    def log_abs_det_jacobian(self, x, y):
+        return 2.0 * (math.log(2.0) - x - F.softplus(-2.0 * x))
+
+
+class SquashedNormal(pyd.transformed_distribution.TransformedDistribution):
+    def __init__(self, loc, scale):
+        self.loc = loc
+        self.scale = scale
+
+        self.base_dist = pyd.Normal(loc, scale)
+        transforms = [TanhTransform()]
+        super().__init__(self.base_dist, transforms)
+
+    @property
+    def mean(self):
+        mu = self.loc
+        for tr in self.transforms:
+            mu = tr(mu)
+        return mu
+
+
+class StochasticActor(nn.Module):
+    def __init__(self, obs_size, action_size, max_action, log_std_low, log_std_high):
+        super().__init__()
+        self.fc1 = nn.Linear(obs_size, 400)
+        self.fc2 = nn.Linear(400, 300)
+        self.fc3 = nn.Linear(300, 2 * action_size)
+        self.max_act = max_action
+        self.log_std_low = log_std_low
+        self.log_std_high = log_std_high
 
     def forward(self, state, stochastic=False):
-        x = self.encoder(state)
-        x = F.relu(self.fc(x))
-        self.rep = x
-        mu = self.mu(x)
-        log_std = self.log_std(x)
-        if not stochastic:
-            act = self.max_act * torch.tanh(mu)
-            logp_a = None
-        else:
-            unsquashed_act, logp_a = self._sample_from(mu, log_std)
-            act = self.max_act * torch.tanh(unsquashed_act)
-        return act, logp_a
+        x = F.relu(self.fc1(state))
+        x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
+        mu, log_std = x.chunk(2, dim=1)
+        log_std = torch.tanh(log_std)
+        log_std = self.log_std_low + 0.5 * (self.log_std_high - self.log_std_low) * (
+            log_std + 1
+        )
+        std = log_std.exp()
+        dist = SquashedNormal(mu, std)
+        return dist
 
 
 class BaselinePixelEncoder(nn.Module):
@@ -181,7 +219,7 @@ class BaselineDiscreteActor(nn.Module):
         self.act_p = nn.Linear(300, action_size)
 
     def _sample_from(self, act_p):
-        act_dist = Categorical(act_p)
+        act_dist = pyd.categorical.Categorical(act_p)
         act = act_dist.sample().view(-1, 1)
         logp_a = torch.log(act_p + 1e-8)
         return act, logp_a
