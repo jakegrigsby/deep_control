@@ -2,7 +2,7 @@ import gym
 import numpy as np
 import torch
 
-from . import agents, envs, utils
+from . import envs, utils
 
 
 def run_env(agent, env, episodes, max_steps, render=False, verbosity=1):

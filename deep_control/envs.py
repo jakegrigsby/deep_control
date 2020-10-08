@@ -5,8 +5,6 @@ from collections import deque
 import gym
 import numpy as np
 
-from . import agents
-
 
 class ChannelsFirstWrapper(gym.ObservationWrapper):
     """
@@ -249,51 +247,3 @@ def load_dmc(
     if from_pixels:
         env = FrameStack(env, num_stack=frame_stack)
     return env
-
-
-def load_exp(env_id, algo_type):
-    """
-    convenience function for loading common settings for gym envs,
-    and the correct baseline agent
-
-    ex: load_exp("FetchPush-v0", "sac") loads the FetchPush env,
-    deals with the dict obs spaces from goal-based envs, and loads
-    the state-based SAC agent.
-
-    load_exp("CarRacing-v0", "td3") loads the CarRacing env,
-    deals with the image obs spaces and loads the pixel-based TD3 agent.
-    """
-    env = load_gym(env_id)
-
-    # decide if env is a goal based (dict) env
-    if isinstance(env.observation_space, gym.spaces.dict.Dict):
-        env = GoalBasedWrapper(env)
-
-    # decide if we are learning from state or pixels
-    if len(env.observation_space.shape) > 1:
-        from_state = False
-        if env.observation_space.shape[0] > env.observation_space.shape[-1]:
-            # assume channels-last env and wrap to channels-first
-            env = ChannelsFirstWrapper(env)
-        obs_shape = env.observation_space.shape
-    else:
-        from_state = True
-        obs_shape = env.observation_space.shape[0]
-    action_shape = env.action_space.shape[0]
-    max_action = env.action_space.high[0]
-
-    if from_state:
-        if algo_type == "ddpg":
-            agent = agents.DDPGAgent(obs_shape, action_shape, max_action)
-        elif algo_type == "sac":
-            agent = agents.SACAgent(obs_shape, action_shape, max_action)
-        elif algo_type == "td3":
-            agent = agents.TD3Agent(obs_shape, action_shape, max_action)
-    else:
-        if algo_type == "ddpg":
-            agent = agents.PixelDDPGAgent(obs_shape, action_shape, max_action)
-        elif algo_type == "sac":
-            agent = agents.PixelSACAgent(obs_shape, action_shape, max_action)
-        elif algo_type == "td3":
-            agent = agents.PixelTD3Agent(obs_shape, action_shape, max_action)
-    return agent, env
