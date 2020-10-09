@@ -10,8 +10,9 @@ import tensorboardX
 import torch
 import torch.nn.functional as F
 import tqdm
-from deep_control import envs, nets, replay, run, utils, sac
-from deep_control.augmentations import DrqAug, AugmentationSequence
+
+from deep_control import envs, nets, replay, run, sac, utils
+from deep_control.augmentations import AugmentationSequence, DrqAug
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

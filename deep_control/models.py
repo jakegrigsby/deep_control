@@ -2,12 +2,12 @@ import random
 
 import torch
 import torch.nn.functional as F
-from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-from pytorch_lightning.core.lightning import LightningModule
-from pytorch_lightning import loggers as pl_loggers
 from blitz.modules import BayesianLinear
 from blitz.utils import variational_estimator
+from pytorch_lightning import Trainer
+from pytorch_lightning import loggers as pl_loggers
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+from pytorch_lightning.core.lightning import LightningModule
 from torch import nn
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

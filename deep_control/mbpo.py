@@ -3,11 +3,12 @@ import copy
 import math
 from itertools import chain
 
-import deep_control as dc
 import numpy as np
 import tensorboardX
 import torch
 import tqdm
+
+import deep_control as dc
 
 from . import modeled_env, models
 
@@ -152,7 +153,7 @@ def mbpo(
     current_max_rollout_length = int(max_rollout_length_start)
     max_rollout_length_slope = float(
         max_rollout_length_final - max_rollout_length_start
-    ) / (max_rollout_length_anneal_end - max_rollout_length_anneal_start)
+    ) / max((max_rollout_length_anneal_end - max_rollout_length_anneal_start), 1)
 
     # progress bar
     steps_iter = range(1, num_steps + 1)
@@ -276,7 +277,7 @@ def add_args(parser):
     parser.add_argument(
         "--num_steps",
         type=int,
-        default=10 ** 6,
+        default=100_000,
         help="number of steps in the training process",
     )
     parser.add_argument(
@@ -324,19 +325,19 @@ def add_args(parser):
     parser.add_argument(
         "--max_rollout_length_final",
         type=int,
-        default=15,
+        default=1,
         help="length of modeled rollouts after `max_rollout_length_anneal_end` epochs.",
     )
     parser.add_argument(
         "--max_rollout_length_anneal_start",
         type=int,
-        default=20,
+        default=1,
         help="Epoch # to start linearly increasing the rollout length. An epoch ends every `real_env_steps_per_epoch` training steps",
     )
     parser.add_argument(
         "--max_rollout_length_anneal_end",
         type=int,
-        default=100,
+        default=1,
         help="Epoch # that the rollout length ends its linear increase.",
     )
     parser.add_argument(
@@ -355,16 +356,13 @@ def add_args(parser):
         help="target network polyak averaging value",
     )
     parser.add_argument(
-        "--actor_lr", type=float, default=3e-4, help="actor learning rate",
+        "--actor_lr", type=float, default=1e-4, help="actor learning rate",
     )
     parser.add_argument(
-        "--critic_lr", type=float, default=3e-3, help="critic learning rate",
+        "--critic_lr", type=float, default=1e-4, help="critic learning rate",
     )
     parser.add_argument(
         "--gamma", type=float, default=0.99, help="gamma, the discount factor",
-    )
-    parser.add_argument(
-        "--alpha", type=float, default=0.2, help="Entropy regularization coefficeint.",
     )
     parser.add_argument(
         "--buffer_size",

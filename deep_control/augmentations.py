@@ -7,13 +7,13 @@ import time
 from operator import itemgetter
 
 import cv2
-from PIL import Image
 import numpy as np
 import torch
+from PIL import Image
 from skimage.transform import resize
 from skimage.util.shape import view_as_windows
-from torchvision import transforms
 from torch import nn
+from torchvision import transforms
 
 
 class AugmentationSequence:
