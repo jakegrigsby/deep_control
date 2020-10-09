@@ -96,13 +96,13 @@ class GoalBasedWrapper(gym.ObservationWrapper):
 
 def add_gym_args(parser):
     """
-    Add a --env cl flag to an argparser
+    Add a --env_id cl flag to an argparser
     """
-    parser.add_argument("--env", type=str, default="Pendulum-v0")
+    parser.add_argument("--env_id", type=str, default="Pendulum-v0")
     parser.add_argument("--seed", type=int, default=231)
 
 
-def load_gym(env_id, seed=None, **_):
+def load_gym(env_id="CartPole-v1", seed=None, **_):
     """
     Load an environment from OpenAI gym (or pybullet_gym, if installed)
     """
@@ -114,7 +114,7 @@ def load_gym(env_id, seed=None, **_):
         pass
     env = gym.make(env_id)
     if seed is None:
-        seed = random.randint(1, 100)
+        seed = random.randint(1, 100000)
     env.seed(seed)
     return env
 
@@ -172,7 +172,7 @@ def load_atari(
     """
     env = gym.make(game_id)
     if seed is None:
-        seed = random.randint(1, 100)
+        seed = random.randint(1, 100000)
     env.seed(seed)
     env = gym.wrappers.AtariPreprocessing(
         env,
@@ -227,7 +227,7 @@ def load_dmc(
     import dmc2gym
 
     if seed is None:
-        seed = random.randint(1, 100)
+        seed = random.randint(1, 100000)
     env = dmc2gym.make(
         domain_name=domain_name,
         task_name=task_name,

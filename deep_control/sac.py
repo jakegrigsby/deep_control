@@ -93,6 +93,15 @@ class SACDAgent(SACAgent):
         self.critic1 = nets.BaselineDiscreteCritic(obs_space_size, act_space_size)
         self.critic2 = nets.BaselineDiscreteCritic(obs_space_size, act_space_size)
 
+    def forward(self, state):
+        state = self.process_state(state)
+        self.actor.eval()
+        with torch.no_grad():
+            act_dist = self.actor.forward(state)
+            act = torch.argmax(act_dist.probs, dim=1)
+        self.actor.train()
+        return self.process_act(act)
+
 
 def sac(
     agent,
@@ -109,6 +118,7 @@ def sac(
     alpha_lr=1e-4,
     gamma=0.99,
     eval_interval=5000,
+    eval_episodes=10,
     warmup_steps=1000,
     actor_clip=None,
     critic_clip=None,
@@ -175,7 +185,7 @@ def sac(
         learn_fn = learn
     else:
         # discrete action learning
-        target_entropy = -math.log(1.0 / train_env.action_space.shape[0]) * 0.98
+        target_entropy = -math.log(1.0 / train_env.action_space.n) * 0.98
         learn_fn = learn_discrete
 
     # warmup the replay buffer with random actions
@@ -344,8 +354,7 @@ def learn_discrete(
     target_agent,
     agent,
     actor_optimizer,
-    critic1_optimizer,
-    critic2_optimizer,
+    critic_optimizer,
     log_alpha_optimizer,
     target_entropy,
     batch_size,
@@ -375,9 +384,9 @@ def learn_discrete(
     alpha = torch.exp(log_alpha)
     with torch.no_grad():
         # create critic targets (clipped double Q learning)
-        action_s1, logp_a1 = agent.stochastic_forward(
-            next_state_batch, track_gradients=False, process_states=False
-        )
+        action_dist_s1 = agent.actor(state_batch)
+        action_s1 = action_dist_s1.sample()
+        logp_a1 = action_dist_s1.log_prob(action_s1).unsqueeze(1)
         target_value_s1 = (
             logp_a1.exp()
             * (
@@ -390,37 +399,33 @@ def learn_discrete(
         ).sum(1, keepdim=True)
         td_target = reward_batch + gamma * (1.0 - done_batch) * (target_value_s1)
 
-    # update first critic
+    # update critics
     agent_critic1_pred = agent.critic1(state_batch).gather(1, action_batch.long())
     td_error1 = td_target - agent_critic1_pred
     if per:
         critic1_loss = (imp_weights * 0.5 * (td_error1 ** 2)).mean()
     else:
         critic1_loss = 0.5 * (td_error1 ** 2).mean()
-    critic1_optimizer.zero_grad()
-    critic1_loss.backward()
-    if critic_clip:
-        torch.nn.utils.clip_grad_norm_(agent.critic1.parameters(), critic_clip)
-    critic1_optimizer.step()
-
-    # update second critic
     agent_critic2_pred = agent.critic2(state_batch).gather(1, action_batch.long())
     td_error2 = td_target - agent_critic2_pred
     if per:
         critic2_loss = (imp_weights * 0.5 * (td_error2 ** 2)).mean()
     else:
         critic2_loss = 0.5 * (td_error2 ** 2).mean()
-    critic2_optimizer.zero_grad()
-    critic2_loss.backward()
+    critic_loss = critic1_loss + critic2_loss
+    critic_optimizer.zero_grad()
+    critic_loss.backward()
     if critic_clip:
-        torch.nn.utils.clip_grad_norm_(agent.critic2.parameters(), critic_clip)
-    critic2_optimizer.step()
+        torch.nn.utils.clip_grad_norm_(
+            chain(agent.critic1.parameters(), agent.critic2.parameters()), critic_clip
+        )
+    critic_optimizer.step()
 
     if update_policy:
         # actor update
-        agent_actions, logp_a = agent.stochastic_forward(
-            state_batch, track_gradients=True, process_states=False
-        )
+        agent_action_dist = agent.actor(state_batch)
+        agent_actions = agent_action_dist.sample()
+        logp_a = agent_action_dist.log_prob(agent_actions).unsqueeze(1)
         actor_loss = (
             (
                 logp_a.exp()
@@ -441,7 +446,7 @@ def learn_discrete(
         # alpha update
         alpha_loss = torch.sum(
             logp_a.exp().detach() * (-alpha * (logp_a.detach() + target_entropy)),
-            dim=1,
+            dim=-1,
             keepdim=True,
         ).mean()
         log_alpha_optimizer.zero_grad()

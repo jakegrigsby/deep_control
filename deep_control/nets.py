@@ -244,35 +244,27 @@ class StochasticActor(nn.Module):
 class BaselineDiscreteActor(nn.Module):
     def __init__(self, obs_shape, action_size):
         super().__init__()
-        self.encoder = BaselineEncoder(obs_shape)
-        self.fc = nn.Linear(400, 300)
+        self.fc1 = nn.Linear(obs_shape, 400)
+        self.fc2 = nn.Linear(400, 300)
         self.act_p = nn.Linear(300, action_size)
 
-    def _sample_from(self, act_p):
-        act_dist = pyd.categorical.Categorical(act_p)
-        act = act_dist.sample().view(-1, 1)
-        logp_a = torch.log(act_p + 1e-8)
-        return act, logp_a
-
-    def forward(self, state, stochastic=False):
-        x = self.encoder(state)
-        x = F.relu(self.fc(x))
-        self.rep = x
+    def forward(self, state):
+        x = F.relu(self.fc1(state))
+        x = F.relu(self.fc2(x))
         act_p = F.softmax(self.act_p(x), dim=1)
-        if not stochastic:
-            act = torch.argmax(act_p, dim=1)
-            logp_a = torch.log(act_p.gather(1, act.view(-1, 1)))
-        else:
-            act, logp_a = self._sample_from(act_p)
-        act = act.float()
-        return act, logp_a
+        dist = pyd.categorical.Categorical(act_p)
+        return dist
 
 
-class BaselinePixelDiscreteActor(BaselineDiscreteActor):
-    def __init__(self, obs_shape, action_size):
-        super().__init__(obs_shape[0], action_size)
-        self.encoder = BaselinePixelEncoder(obs_shape)
+class BaselineDiscreteCritic(nn.Module):
+    def __init__(self, obs_shape, action_shape):
+        super().__init__()
+        self.fc1 = nn.Linear(obs_shape, 400)
+        self.fc2 = nn.Linear(400, 300)
+        self.out = nn.Linear(300, action_shape)
 
-    def forward(self, state, stochastic=False):
-        state = state / 255.0
-        return super().forward(state, stochastic=stochastic)
+    def forward(self, state):
+        x = F.relu(self.fc1(state))
+        x = F.relu(self.fc2(x))
+        vals = self.out(x)
+        return vals
