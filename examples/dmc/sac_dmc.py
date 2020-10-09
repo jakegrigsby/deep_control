@@ -40,5 +40,5 @@ if __name__ == "__main__":
     dc.sac.add_args(parser)
     args = parser.parse_args()
     args.from_pixels = False
-    args.max_episode_steps = (1000 + args.frame_skip - 1) // args.frame_skip
+    args.max_episode_steps = 1000
     train_dmc_sac(args)

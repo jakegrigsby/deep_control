@@ -21,11 +21,11 @@ class SACAgent:
     def __init__(
         self, obs_space_size, act_space_size, max_action, log_std_low, log_std_high
     ):
-        self.actor = nets.StochasticActor(
+        self.actor = nets.StochasticBigActor(
             obs_space_size, act_space_size, max_action, log_std_low, log_std_high
         )
-        self.critic1 = nets.BaselineCritic(obs_space_size, act_space_size)
-        self.critic2 = nets.BaselineCritic(obs_space_size, act_space_size)
+        self.critic1 = nets.BigCritic(obs_space_size, act_space_size)
+        self.critic2 = nets.BigCritic(obs_space_size, act_space_size)
         self.max_act = max_action
 
     def to(self, device):
@@ -84,7 +84,7 @@ class SACAgent:
         )
 
     def process_act(self, act):
-        return np.squeeze(act.cpu().numpy(), 0)
+        return np.squeeze(act.clamp(-self.max_act, self.max_act).cpu().numpy(), 0)
 
 
 class SACDAgent(SACAgent):
@@ -124,7 +124,8 @@ def sac(
     critic_clip=None,
     actor_l2=0.0,
     critic_l2=0.0,
-    delay=1,
+    target_delay=1,
+    actor_delay=1,
     save_interval=100_000,
     name="sac_run",
     render=False,
@@ -215,7 +216,6 @@ def sac(
             if steps_this_ep >= max_episode_steps:
                 done = True
 
-        update_policy = step % delay == 0
         for _ in range(gradient_updates_per_step):
             learn_fn(
                 buffer=buffer,
@@ -230,11 +230,11 @@ def sac(
                 gamma=gamma,
                 critic_clip=critic_clip,
                 actor_clip=actor_clip,
-                update_policy=update_policy,
+                update_policy=step % actor_delay == 0,
             )
 
             # move target model towards training model
-            if update_policy:
+            if step % target_delay == 0:
                 utils.soft_update(target_agent.critic1, agent.critic1, tau)
                 utils.soft_update(target_agent.critic2, agent.critic2, tau)
 
@@ -476,7 +476,7 @@ def add_args(parser):
         help="maximum steps per episode",
     )
     parser.add_argument(
-        "--batch_size", type=int, default=256, help="training batch size"
+        "--batch_size", type=int, default=512, help="training batch size"
     )
     parser.add_argument(
         "--tau", type=float, default=0.005, help="for model parameter % update"
@@ -485,7 +485,7 @@ def add_args(parser):
         "--actor_lr", type=float, default=1e-4, help="actor learning rate"
     )
     parser.add_argument(
-        "--critic_lr", type=float, default=1e-3, help="critic learning rate"
+        "--critic_lr", type=float, default=1e-4, help="critic learning rate"
     )
     parser.add_argument(
         "--gamma", type=float, default=0.99, help="gamma, the discount factor"
@@ -553,7 +553,13 @@ def add_args(parser):
         help="L2 regularization coeff for critic network",
     )
     parser.add_argument(
-        "--delay",
+        "--target_delay",
+        type=int,
+        default=2,
+        help="How many steps to go between target network updates",
+    )
+    parser.add_argument(
+        "--actor_delay",
         type=int,
         default=1,
         help="How many steps to go between actor updates",

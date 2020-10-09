@@ -90,7 +90,7 @@ class SmallPixelEncoder(nn.Module):
         return state
 
 
-class BigActor(nn.Module):
+class StochasticBigActor(nn.Module):
     def __init__(
         self,
         state_space_size,
