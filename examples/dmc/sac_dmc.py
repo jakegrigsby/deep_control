@@ -39,7 +39,6 @@ if __name__ == "__main__":
     # add sac-related cl args
     dc.sac.add_args(parser)
     args = parser.parse_args()
+    args.from_pixels = False
+    args.max_episode_steps = (1000 + args.frame_skip - 1) // args.frame_skip
     train_dmc_sac(args)
-    assert (
-        not args.from_pixels
-    ), "Base SAC agent not configured for learning from pixels. See sac_aug_dmc.py"

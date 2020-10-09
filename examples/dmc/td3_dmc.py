@@ -37,7 +37,6 @@ if __name__ == "__main__":
     # add sac-related cl args
     dc.td3.add_args(parser)
     args = parser.parse_args()
+    args.from_pixels = False
+    args.max_episode_steps = (1000 + args.frame_skip - 1) // args.frame_skip
     train_dmc_td3(args)
-    assert (
-        not args.from_pixels
-    ), "TD3 Agent not currently configured to learn from pixels"
