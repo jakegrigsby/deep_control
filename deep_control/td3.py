@@ -2,6 +2,7 @@ import argparse
 import copy
 import time
 import os
+from itertools import chain
 
 import gym
 import numpy as np
@@ -134,11 +135,12 @@ def td3(
         theta=theta,
     )
 
-    critic1_optimizer = torch.optim.Adam(
-        agent.critic1.parameters(), lr=critic_lr, weight_decay=critic_l2
-    )
-    critic2_optimizer = torch.optim.Adam(
-        agent.critic2.parameters(), lr=critic_lr, weight_decay=critic_l2
+    # set up optimizers
+    critic_optimizer = torch.optim.Adam(
+        chain(agent.critic1.parameters(), agent.critic2.parameters(),),
+        lr=critic_lr,
+        weight_decay=critic_l2,
+        betas=(0.9, 0.999),
     )
     actor_optimizer = torch.optim.Adam(
         agent.actor.parameters(), lr=actor_lr, weight_decay=actor_l2
@@ -182,8 +184,7 @@ def td3(
                 target_agent=target_agent,
                 agent=agent,
                 actor_optimizer=actor_optimizer,
-                critic1_optimizer=critic1_optimizer,
-                critic2_optimizer=critic2_optimizer,
+                critic_optimizer=critic_optimizer,
                 max_act=train_env.action_space.high[0],
                 batch_size=batch_size,
                 target_noise_scale=target_noise_scale,
@@ -227,8 +228,7 @@ def learn(
     target_agent,
     agent,
     actor_optimizer,
-    critic1_optimizer,
-    critic2_optimizer,
+    critic_optimizer,
     max_act,
     batch_size,
     target_noise_scale,
@@ -259,54 +259,48 @@ def learn(
 
     with torch.no_grad():
         # create critic targets (clipped double Q learning)
-        target_action_s2 = target_agent.actor(next_state_batch)
+        target_action_s1 = target_agent.actor(next_state_batch)
         target_noise = torch.clamp(
-            target_noise_scale * torch.randn(*target_action_s2.shape).to(device), -c, c
+            target_noise_scale * torch.randn(*target_action_s1.shape).to(device), -c, c
         )
         # target smoothing
-        target_action_s2 = torch.clamp(
-            target_action_s2 + target_noise, -max_act, max_act
+        target_action_s1 = torch.clamp(
+            target_action_s1 + target_noise, -max_act, max_act
         )
-        target_action_value_s2 = torch.min(
-            target_agent.critic1(next_state_batch, target_action_s2),
-            target_agent.critic2(next_state_batch, target_action_s2),
+        target_action_value_s1 = torch.min(
+            target_agent.critic1(next_state_batch, target_action_s1),
+            target_agent.critic2(next_state_batch, target_action_s1),
         )
-        td_target = reward_batch + gamma * (1.0 - done_batch) * target_action_value_s2
+        td_target = reward_batch + gamma * (1.0 - done_batch) * target_action_value_s1
 
-    # update first critic
+    # update critics
     agent_critic1_pred = agent.critic1(state_batch, action_batch)
     td_error1 = td_target - agent_critic1_pred
     if per:
         critic1_loss = (imp_weights * 0.5 * (td_error1 ** 2)).mean()
     else:
         critic1_loss = 0.5 * (td_error1 ** 2).mean()
-    critic1_optimizer.zero_grad()
-    critic1_loss.backward()
-    if critic_clip:
-        torch.nn.utils.clip_grad_norm_(agent.critic1.parameters(), critic_clip)
-    critic1_optimizer.step()
-
-    # update second critic
     agent_critic2_pred = agent.critic2(state_batch, action_batch)
     td_error2 = td_target - agent_critic2_pred
     if per:
         critic2_loss = (imp_weights * 0.5 * (td_error2 ** 2)).mean()
     else:
         critic2_loss = 0.5 * (td_error2 ** 2).mean()
-    critic2_optimizer.zero_grad()
-    critic2_loss.backward()
+    critic_loss = critic1_loss + critic2_loss
+    critic_optimizer.zero_grad()
+    critic_loss.backward()
     if critic_clip:
-        torch.nn.utils.clip_grad_norm_(agent.critic2.parameters(), critic_clip)
-    critic2_optimizer.step()
-
-    mean_critic_loss = (critic1_loss + critic2_loss).detach() / 2.0
+        torch.nn.utils.clip_grad_norm_(
+            chain(agent.critic1.parameters(), agent.critic2.parameters()), critic_clip
+        )
+    critic_optimizer.step()
 
     if update_policy:
         # actor update
         agent_actions = agent.actor(state_batch)
         actor_loss = -(
             agent.critic1(state_batch, agent_actions).mean()
-            - td_reg_coeff * mean_critic_loss
+            - td_reg_coeff * critic_loss.detach()
         )
         actor_optimizer.zero_grad()
         actor_loss.backward()
