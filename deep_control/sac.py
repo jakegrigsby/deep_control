@@ -59,23 +59,28 @@ class SACAgent:
         self.critic1.load_state_dict(torch.load(critic1_path))
         self.critic2.load_state_dict(torch.load(critic2_path))
 
-    def forward(self, state):
-        state = self.process_state(state)
+    def forward(self, state, from_cpu=True):
+        if from_cpu:
+            state = self.process_state(state)
         self.actor.eval()
         with torch.no_grad():
             act_dist = self.actor.forward(state)
             act = act_dist.mean
         self.actor.train()
-        return self.process_act(act)
+        if from_cpu:
+            act = self.process_act(act)
+        return act
 
-    def sample_action(self, state):
-        state = self.process_state(state)
+    def sample_action(self, state, from_cpu=True):
+        if from_cpu:
+            state = self.process_state(state)
         self.actor.eval()
         with torch.no_grad():
             act_dist = self.actor.forward(state)
             act = act_dist.sample()
         self.actor.train()
-        act = self.process_act(act)
+        if from_cpu:
+            act = self.process_act(act)
         return act
 
     def process_state(self, state):
@@ -604,13 +609,13 @@ def add_args(parser):
     )
     parser.add_argument(
         "--log_std_low",
-        type=int,
+        type=float,
         default=-10,
         help="Lower bound for log std of action distribution.",
     )
     parser.add_argument(
         "--log_std_high",
-        type=int,
+        type=float,
         default=2,
         help="Upper bound for log std of action distribution.",
     )
