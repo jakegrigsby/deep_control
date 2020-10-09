@@ -70,9 +70,11 @@ class SACAgent:
 
     def sample_action(self, state):
         state = self.process_state(state)
+        self.actor.eval()
         with torch.no_grad():
             act_dist = self.actor.forward(state)
             act = act_dist.sample()
+        self.actor.train()
         act = self.process_act(act)
         return act
 
@@ -107,7 +109,6 @@ def sac(
     alpha_lr=1e-4,
     gamma=0.99,
     eval_interval=5000,
-    eval_episodes=10,
     warmup_steps=1000,
     actor_clip=None,
     critic_clip=None,

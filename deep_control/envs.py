@@ -132,7 +132,7 @@ def add_dmc_args(parser):
     parser.add_argument("--width", type=int, default=84)
     parser.add_argument("--camera_id", type=int, default=0)
     parser.add_argument("--frame_skip", type=int, default=1)
-    parser.add_argument("--frame_stack", type=int, default=4)
+    parser.add_argument("--frame_stack", type=int, default=3)
     parser.add_argument("--channels_last", action="store_true")
     parser.add_argument("--rgb", action="store_true")
     parser.add_argument("--seed", type=int, default=231)
