@@ -29,6 +29,7 @@ def train_dmc_ddpg(args):
         agent=agent, train_env=train_env, test_env=test_env, buffer=buffer, **vars(args)
     )
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # add dmc-related cl args
@@ -37,4 +38,6 @@ if __name__ == "__main__":
     dc.ddpg.add_args(parser)
     args = parser.parse_args()
     train_dmc_ddpg(args)
-    assert not args.from_pixels, "DDPG Agent not currently configured to learn from pixels"
+    assert (
+        not args.from_pixels
+    ), "DDPG Agent not currently configured to learn from pixels"

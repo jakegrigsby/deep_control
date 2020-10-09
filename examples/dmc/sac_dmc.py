@@ -11,7 +11,9 @@ def train_dmc_sac(args):
     action_shape = train_env.action_space.shape
     max_action = train_env.action_space.high[0]
 
-    agent = dc.sac.SACAgent(obs_shape[0], action_shape[0], max_action, args.log_std_low, args.log_std_high)
+    agent = dc.sac.SACAgent(
+        obs_shape[0], action_shape[0], max_action, args.log_std_low, args.log_std_high
+    )
 
     # select a replay buffer
     if args.prioritized_replay:
@@ -29,6 +31,7 @@ def train_dmc_sac(args):
         agent=agent, train_env=train_env, test_env=test_env, buffer=buffer, **vars(args)
     )
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # add dmc-related cl args
@@ -37,4 +40,6 @@ if __name__ == "__main__":
     dc.sac.add_args(parser)
     args = parser.parse_args()
     train_dmc_sac(args)
-    assert not args.from_pixels, "Base SAC agent not configured for learning from pixels. See sac_aug_dmc.py"
+    assert (
+        not args.from_pixels
+    ), "Base SAC agent not configured for learning from pixels. See sac_aug_dmc.py"

@@ -1,7 +1,7 @@
 import argparse
 import copy
-import time
 import os
+import time
 from itertools import chain
 
 import gym
@@ -11,7 +11,7 @@ import torch
 import torch.nn.functional as F
 import tqdm
 
-from . import envs, replay, run, utils, nets
+from . import envs, nets, replay, run, utils
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -54,15 +54,12 @@ class TD3Agent:
         self.critic2.load_state_dict(torch.load(critic2_path))
 
     def forward(self, state):
-        # first need to add batch dimension and convert to torch tensors
         state = self.process_state(state)
         self.actor.eval()
         with torch.no_grad():
             action = self.actor(state)
+        self.actor.train()
         return self.process_act(action)
-
-    def collection_forward(self, state):
-        return self.forward(state)
 
     def process_state(self, state):
         return torch.from_numpy(np.expand_dims(state, 0).astype(np.float32)).to(
@@ -117,6 +114,13 @@ def td3(
 
     Reference: https://arxiv.org/abs/1802.09477
     """
+    if save_to_disk or log_to_disk:
+        save_dir = utils.make_process_dirs(name)
+    if log_to_disk:
+        # create tb writer, save hparams
+        writer = tensorboardX.SummaryWriter(save_dir)
+        writer.add_hparams(locals(), {})
+
     agent.to(device)
     max_act = train_env.action_space.high[0]
 
@@ -146,16 +150,9 @@ def td3(
         agent.actor.parameters(), lr=actor_lr, weight_decay=actor_l2
     )
 
-    if save_to_disk or log_to_disk:
-        save_dir = utils.make_process_dirs(name)
-    if log_to_disk:
-        # create tb writer, save hparams
-        writer = tensorboardX.SummaryWriter(save_dir)
-
     run.warmup_buffer(buffer, train_env, warmup_steps, max_episode_steps)
 
     done = True
-    learning_curve = []
 
     steps_iter = range(num_steps)
     if verbosity:
@@ -212,8 +209,6 @@ def td3(
             )
             if log_to_disk:
                 writer.add_scalar("return", mean_return, step * transitions_per_step)
-
-            learning_curve.append((step * transitions_per_step, mean_return))
 
         if step % save_interval == 0 and save_to_disk:
             agent.save(save_dir)

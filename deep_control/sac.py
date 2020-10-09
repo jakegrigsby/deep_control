@@ -1,8 +1,8 @@
 import argparse
 import copy
 import math
-import time
 import os
+import time
 from itertools import chain
 
 import gym
@@ -12,7 +12,7 @@ import torch
 import torch.nn.functional as F
 import tqdm
 
-from . import envs, replay, run, utils, nets
+from . import envs, nets, replay, run, utils
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
