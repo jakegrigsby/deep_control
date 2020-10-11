@@ -78,14 +78,14 @@ def td3(
     num_steps=1_000_000,
     transitions_per_step=1,
     max_episode_steps=100_000,
-    batch_size=128,
+    batch_size=256,
     tau=0.005,
     actor_lr=1e-4,
     critic_lr=1e-3,
     gamma=0.99,
     sigma_start=0.2,
     sigma_final=0.1,
-    sigma_anneal=10_000,
+    sigma_anneal=100_000,
     theta=0.15,
     eval_interval=5000,
     eval_episodes=10,
@@ -109,8 +109,8 @@ def td3(
     **_,
 ):
     """
-    Train `agent` on `env` with Twin Delayed Deep Deterministic Policy 
-    Gradient algorithm.
+    Train `agent` on `train_env` with Twin Delayed Deep Deterministic Policy 
+    Gradient algorithm, and evaluate on `test_env`.
 
     Reference: https://arxiv.org/abs/1802.09477
     """
