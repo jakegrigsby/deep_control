@@ -15,27 +15,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def clean_hparams_dict(hparams_dict):
     return {key: val for key, val in hparams_dict.items() if val}
 
-
-class FlattenRoboticsDictWrapper(gym.Wrapper):
-    def __init_(self, env):
-        super().__init__(env)
-
-    def step(self, action):
-        obs_dict, rew, done, info = self.env.step(action)
-        return self._flatten_obs(obs_dict), rew, done, info
-
-    def reset(self):
-        return self._flatten_obs(self.env.reset())
-
-    def _flatten_obs(self, obs_dict):
-        return np.concatenate((obs_dict["observation"], obs_dict["desired_goal"]))
-
-
-Transition = namedtuple(
-    "Transition", ("state", "action", "reward", "next_state", "done")
-)
-
-
 def torch_and_pad(x):
     if not isinstance(x, np.ndarray):
         x = np.array(x)
@@ -80,12 +59,6 @@ def compute_conv_output(
         + 1
     )
     return height_out, width_out
-
-
-"""
-Credit for update functions:
-https://github.com/ikostrikov/pytorch-ddpg-naf
-"""
 
 
 def soft_update(target, source, tau):

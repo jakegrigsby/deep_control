@@ -87,7 +87,11 @@ def mbpo(
     model_l2=0.0001,
     **_,
 ):
+    """
+    Train `agent` on `train_env` using MBPO, and evaluate on `test_env`.
 
+    Reference: https://arxiv.org/abs/1906.08253
+    """
     if save_to_disk or log_to_disk:
         save_dir = dc.utils.make_process_dirs(name)
     if log_to_disk:

@@ -66,15 +66,15 @@ def ddpg(
     num_steps=1_000_000,
     transitions_per_step=1,
     max_episode_steps=100_000,
-    batch_size=128,
+    batch_size=256,
     tau=0.005,
     actor_lr=1e-4,
     critic_lr=1e-3,
     gamma=0.99,
     sigma_start=0.2,
     sigma_final=0.1,
-    sigma_anneal=10_000,
-    theta=0.15,
+    sigma_anneal=100_000,
+    theta=.15,
     eval_interval=5000,
     eval_episodes=10,
     warmup_steps=1000,
@@ -92,7 +92,8 @@ def ddpg(
     **_,
 ):
     """
-    Train `agent` on `env` with the Deep Deterministic Policy Gradient algorithm.
+    Train `agent` on `train_env` with the Deep Deterministic Policy Gradient algorithm,
+    and evaluate on `test_env`.
 
     Reference: https://arxiv.org/abs/1509.02971
     """
@@ -113,11 +114,12 @@ def ddpg(
     utils.hard_update(target_agent.actor, agent.actor)
     utils.hard_update(target_agent.critic, agent.critic)
 
-    random_process = utils.GaussianExplorationNoise(
+    random_process = utils.OrnsteinUhlenbeckProcess(
+        theta=theta,
         size=train_env.action_space.shape,
-        start_scale=sigma_start,
-        final_scale=sigma_final,
-        steps_annealed=sigma_anneal,
+        sigma=sigma_start,
+        sigma_min=sigma_final,
+        n_steps_annealed=sigma_anneal,
     )
 
     critic_optimizer = torch.optim.Adam(
@@ -282,16 +284,16 @@ def add_args(parser):
         help="How many steps to anneal sigma over.",
     )
     parser.add_argument(
-        "--theta",
-        type=float,
-        default=0.15,
-        help="theta for Ornstein Uhlenbeck process computation",
-    )
-    parser.add_argument(
         "--sigma_start",
         type=float,
         default=0.2,
         help="sigma for Ornstein Uhlenbeck process computation",
+    )
+    parser.add_argument(
+        "--theta",
+        type=float,
+        default=.15,
+        help="theta for Ornstein Uhlenbeck process computation",
     )
     parser.add_argument(
         "--eval_interval",
