@@ -1,7 +1,9 @@
 import argparse
 import copy
 import math
+import os
 import time
+from itertools import chain
 
 import gym
 import numpy as np
@@ -10,9 +12,100 @@ import torch
 import torch.nn.functional as F
 import tqdm
 
-from . import envs, replay, run, utils
+from . import envs, nets, replay, run, utils
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+class SACAgent:
+    def __init__(
+        self, obs_space_size, act_space_size, max_action, log_std_low, log_std_high
+    ):
+        self.actor = nets.StochasticBigActor(
+            obs_space_size, act_space_size, max_action, log_std_low, log_std_high
+        )
+        self.critic1 = nets.BigCritic(obs_space_size, act_space_size)
+        self.critic2 = nets.BigCritic(obs_space_size, act_space_size)
+        self.max_act = max_action
+
+    def to(self, device):
+        self.actor = self.actor.to(device)
+        self.critic1 = self.critic1.to(device)
+        self.critic2 = self.critic2.to(device)
+
+    def eval(self):
+        self.actor.eval()
+        self.critic1.eval()
+        self.critic2.eval()
+
+    def train(self):
+        self.actor.train()
+        self.critic1.train()
+        self.critic2.train()
+
+    def save(self, path):
+        actor_path = os.path.join(path, "actor.pt")
+        critic1_path = os.path.join(path, "critic1.pt")
+        critic2_path = os.path.join(path, "critic2.pt")
+        torch.save(self.actor.state_dict(), actor_path)
+        torch.save(self.critic1.state_dict(), critic1_path)
+        torch.save(self.critic2.state_dict(), critic2_path)
+
+    def load(self, path):
+        actor_path = os.path.join(path, "actor.pt")
+        critic1_path = os.path.join(path, "critic1.pt")
+        critic2_path = os.path.join(path, "critic2.pt")
+        self.actor.load_state_dict(torch.load(actor_path))
+        self.critic1.load_state_dict(torch.load(critic1_path))
+        self.critic2.load_state_dict(torch.load(critic2_path))
+
+    def forward(self, state, from_cpu=True):
+        if from_cpu:
+            state = self.process_state(state)
+        self.actor.eval()
+        with torch.no_grad():
+            act_dist = self.actor.forward(state)
+            act = act_dist.mean
+        self.actor.train()
+        if from_cpu:
+            act = self.process_act(act)
+        return act
+
+    def sample_action(self, state, from_cpu=True):
+        if from_cpu:
+            state = self.process_state(state)
+        self.actor.eval()
+        with torch.no_grad():
+            act_dist = self.actor.forward(state)
+            act = act_dist.sample()
+        self.actor.train()
+        if from_cpu:
+            act = self.process_act(act)
+        return act
+
+    def process_state(self, state):
+        return torch.from_numpy(np.expand_dims(state, 0).astype(np.float32)).to(
+            utils.device
+        )
+
+    def process_act(self, act):
+        return np.squeeze(act.clamp(-self.max_act, self.max_act).cpu().numpy(), 0)
+
+
+class SACDAgent(SACAgent):
+    def __init__(self, obs_space_size, act_space_size):
+        self.actor = nets.BaselineDiscreteActor(obs_space_size, act_space_size)
+        self.critic1 = nets.BaselineDiscreteCritic(obs_space_size, act_space_size)
+        self.critic2 = nets.BaselineDiscreteCritic(obs_space_size, act_space_size)
+
+    def forward(self, state):
+        state = self.process_state(state)
+        self.actor.eval()
+        with torch.no_grad():
+            act_dist = self.actor.forward(state)
+            act = torch.argmax(act_dist.probs, dim=1)
+        self.actor.train()
+        return self.process_act(act)
 
 
 def sac(
@@ -36,7 +129,8 @@ def sac(
     critic_clip=None,
     actor_l2=0.0,
     critic_l2=0.0,
-    delay=1,
+    target_delay=1,
+    actor_delay=1,
     save_interval=100_000,
     name="sac_run",
     render=False,
@@ -55,29 +149,41 @@ def sac(
 
     Also supports discrete action spaces (ref: https://arxiv.org/abs/1910.07207)
     """
+
+    if save_to_disk or log_to_disk:
+        save_dir = utils.make_process_dirs(name)
+    if log_to_disk:
+        # create tb writer, save hparams
+        writer = tensorboardX.SummaryWriter(save_dir)
+        writer.add_hparams(locals(), {})
+
     agent.to(device)
+    agent.train()
 
     # initialize target networks
     target_agent = copy.deepcopy(agent)
     target_agent.to(device)
-    utils.hard_update(target_agent.actor, agent.actor)
     utils.hard_update(target_agent.critic1, agent.critic1)
     utils.hard_update(target_agent.critic2, agent.critic2)
+    target_agent.train()
 
-    critic1_optimizer = torch.optim.Adam(
-        agent.critic1.parameters(), lr=critic_lr, weight_decay=critic_l2
-    )
-    critic2_optimizer = torch.optim.Adam(
-        agent.critic2.parameters(), lr=critic_lr, weight_decay=critic_l2
+    # set up optimizers
+    critic_optimizer = torch.optim.Adam(
+        chain(agent.critic1.parameters(), agent.critic2.parameters(),),
+        lr=critic_lr,
+        weight_decay=critic_l2,
+        betas=(0.9, 0.999),
     )
     actor_optimizer = torch.optim.Adam(
-        agent.actor.parameters(), lr=actor_lr, weight_decay=actor_l2
+        agent.actor.parameters(),
+        lr=actor_lr,
+        weight_decay=actor_l2,
+        betas=(0.9, 0.999),
     )
 
     log_alpha = torch.Tensor([math.log(init_alpha)]).to(device)
     log_alpha.requires_grad = True
-
-    log_alpha_optimizer = torch.optim.Adam([log_alpha], lr=alpha_lr)
+    log_alpha_optimizer = torch.optim.Adam([log_alpha], lr=alpha_lr, betas=(0.5, 0.999))
 
     if not discrete_actions:
         # continuous action learning
@@ -85,49 +191,43 @@ def sac(
         learn_fn = learn
     else:
         # discrete action learning
-        target_entropy = -math.log(1.0 / train_env.action_space.shape[0]) * 0.98
+        target_entropy = -math.log(1.0 / train_env.action_space.n) * 0.98
         learn_fn = learn_discrete
 
-    if save_to_disk or log_to_disk:
-        save_dir = utils.make_process_dirs(name)
-    if log_to_disk:
-        # create tb writer, save hparams
-        writer = tensorboardX.SummaryWriter(save_dir)
-
+    # warmup the replay buffer with random actions
     run.warmup_buffer(buffer, train_env, warmup_steps, max_episode_steps)
 
     done = True
-    learning_curve = []
 
     steps_iter = range(num_steps)
     if verbosity:
         steps_iter = tqdm.tqdm(steps_iter)
 
     for step in steps_iter:
+        # collect experience
         for _ in range(transitions_per_step):
             if done:
                 state = train_env.reset()
                 steps_this_ep = 0
                 done = False
-            action, _ = agent.stochastic_forward(
-                state, track_gradients=False, process_states=True
-            )
+            action = agent.sample_action(state)
             next_state, reward, done, info = train_env.step(action)
+            # allow infinite bootstrapping
+            if steps_this_ep + 1 == max_episode_steps:
+                done = False
             buffer.push(state, action, reward, next_state, done)
             state = next_state
             steps_this_ep += 1
             if steps_this_ep >= max_episode_steps:
                 done = True
 
-        update_policy = step % delay == 0
         for _ in range(gradient_updates_per_step):
             learn_fn(
                 buffer=buffer,
                 target_agent=target_agent,
                 agent=agent,
                 actor_optimizer=actor_optimizer,
-                critic1_optimizer=critic1_optimizer,
-                critic2_optimizer=critic2_optimizer,
+                critic_optimizer=critic_optimizer,
                 log_alpha=log_alpha,
                 log_alpha_optimizer=log_alpha_optimizer,
                 target_entropy=target_entropy,
@@ -135,12 +235,11 @@ def sac(
                 gamma=gamma,
                 critic_clip=critic_clip,
                 actor_clip=actor_clip,
-                update_policy=update_policy,
+                update_policy=step % actor_delay == 0,
             )
 
             # move target model towards training model
-            if update_policy:
-                utils.soft_update(target_agent.actor, agent.actor, tau)
+            if step % target_delay == 0:
                 utils.soft_update(target_agent.critic1, agent.critic1, tau)
                 utils.soft_update(target_agent.critic2, agent.critic2, tau)
 
@@ -150,8 +249,6 @@ def sac(
             )
             if log_to_disk:
                 writer.add_scalar("return", mean_return, step * transitions_per_step)
-
-            learning_curve.append((step * transitions_per_step, mean_return))
 
         if step % save_interval == 0 and save_to_disk:
             agent.save(save_dir)
@@ -166,8 +263,7 @@ def learn(
     target_agent,
     agent,
     actor_optimizer,
-    critic1_optimizer,
-    critic2_optimizer,
+    critic_optimizer,
     log_alpha_optimizer,
     target_entropy,
     batch_size,
@@ -196,49 +292,44 @@ def learn(
 
     alpha = torch.exp(log_alpha)
     with torch.no_grad():
-        # create critic targets (clipped double Q learning)
-        action_s2, logp_a2 = agent.stochastic_forward(
-            next_state_batch, track_gradients=False, process_states=False
-        )
-        target_action_value_s2 = torch.min(
-            target_agent.critic1(next_state_batch, action_s2),
-            target_agent.critic2(next_state_batch, action_s2),
+        action_dist_s1 = agent.actor(next_state_batch)
+        action_s1 = action_dist_s1.rsample()
+        logp_a1 = action_dist_s1.log_prob(action_s1).sum(-1, keepdim=True)
+        target_action_value_s1 = torch.min(
+            target_agent.critic1(next_state_batch, action_s1),
+            target_agent.critic2(next_state_batch, action_s1),
         )
         td_target = reward_batch + gamma * (1.0 - done_batch) * (
-            target_action_value_s2 - (alpha * logp_a2)
+            target_action_value_s1 - (alpha * logp_a1)
         )
 
-    # update first critic
+    # update critics
     agent_critic1_pred = agent.critic1(state_batch, action_batch)
     td_error1 = td_target - agent_critic1_pred
     if per:
         critic1_loss = (imp_weights * 0.5 * (td_error1 ** 2)).mean()
     else:
         critic1_loss = 0.5 * (td_error1 ** 2).mean()
-    critic1_optimizer.zero_grad()
-    critic1_loss.backward()
-    if critic_clip:
-        torch.nn.utils.clip_grad_norm_(agent.critic1.parameters(), critic_clip)
-    critic1_optimizer.step()
-
-    # update second critic
     agent_critic2_pred = agent.critic2(state_batch, action_batch)
     td_error2 = td_target - agent_critic2_pred
     if per:
         critic2_loss = (imp_weights * 0.5 * (td_error2 ** 2)).mean()
     else:
         critic2_loss = 0.5 * (td_error2 ** 2).mean()
-    critic2_optimizer.zero_grad()
-    critic2_loss.backward()
+    critic_loss = critic1_loss + critic2_loss
+    critic_optimizer.zero_grad()
+    critic_loss.backward()
     if critic_clip:
-        torch.nn.utils.clip_grad_norm_(agent.critic2.parameters(), critic_clip)
-    critic2_optimizer.step()
+        torch.nn.utils.clip_grad_norm_(
+            chain(agent.critic1.parameters(), agent.critic2.parameters()), critic_clip
+        )
+    critic_optimizer.step()
 
     if update_policy:
         # actor update
-        agent_actions, logp_a = agent.stochastic_forward(
-            state_batch, track_gradients=True, process_states=False
-        )
+        dist = agent.actor(state_batch)
+        agent_actions = dist.rsample()
+        logp_a = dist.log_prob(agent_actions).sum(-1, keepdim=True)
         actor_loss = -(
             torch.min(
                 agent.critic1(state_batch, agent_actions),
@@ -268,8 +359,7 @@ def learn_discrete(
     target_agent,
     agent,
     actor_optimizer,
-    critic1_optimizer,
-    critic2_optimizer,
+    critic_optimizer,
     log_alpha_optimizer,
     target_entropy,
     batch_size,
@@ -299,9 +389,9 @@ def learn_discrete(
     alpha = torch.exp(log_alpha)
     with torch.no_grad():
         # create critic targets (clipped double Q learning)
-        action_s1, logp_a1 = agent.stochastic_forward(
-            next_state_batch, track_gradients=False, process_states=False
-        )
+        action_dist_s1 = agent.actor(state_batch)
+        action_s1 = action_dist_s1.sample()
+        logp_a1 = action_dist_s1.log_prob(action_s1).unsqueeze(1)
         target_value_s1 = (
             logp_a1.exp()
             * (
@@ -314,37 +404,33 @@ def learn_discrete(
         ).sum(1, keepdim=True)
         td_target = reward_batch + gamma * (1.0 - done_batch) * (target_value_s1)
 
-    # update first critic
+    # update critics
     agent_critic1_pred = agent.critic1(state_batch).gather(1, action_batch.long())
     td_error1 = td_target - agent_critic1_pred
     if per:
         critic1_loss = (imp_weights * 0.5 * (td_error1 ** 2)).mean()
     else:
         critic1_loss = 0.5 * (td_error1 ** 2).mean()
-    critic1_optimizer.zero_grad()
-    critic1_loss.backward()
-    if critic_clip:
-        torch.nn.utils.clip_grad_norm_(agent.critic1.parameters(), critic_clip)
-    critic1_optimizer.step()
-
-    # update second critic
     agent_critic2_pred = agent.critic2(state_batch).gather(1, action_batch.long())
     td_error2 = td_target - agent_critic2_pred
     if per:
         critic2_loss = (imp_weights * 0.5 * (td_error2 ** 2)).mean()
     else:
         critic2_loss = 0.5 * (td_error2 ** 2).mean()
-    critic2_optimizer.zero_grad()
-    critic2_loss.backward()
+    critic_loss = critic1_loss + critic2_loss
+    critic_optimizer.zero_grad()
+    critic_loss.backward()
     if critic_clip:
-        torch.nn.utils.clip_grad_norm_(agent.critic2.parameters(), critic_clip)
-    critic2_optimizer.step()
+        torch.nn.utils.clip_grad_norm_(
+            chain(agent.critic1.parameters(), agent.critic2.parameters()), critic_clip
+        )
+    critic_optimizer.step()
 
     if update_policy:
         # actor update
-        agent_actions, logp_a = agent.stochastic_forward(
-            state_batch, track_gradients=True, process_states=False
-        )
+        agent_action_dist = agent.actor(state_batch)
+        agent_actions = agent_action_dist.sample()
+        logp_a = agent_action_dist.log_prob(agent_actions).unsqueeze(1)
         actor_loss = (
             (
                 logp_a.exp()
@@ -365,7 +451,7 @@ def learn_discrete(
         # alpha update
         alpha_loss = torch.sum(
             logp_a.exp().detach() * (-alpha * (logp_a.detach() + target_entropy)),
-            dim=1,
+            dim=-1,
             keepdim=True,
         ).mean()
         log_alpha_optimizer.zero_grad()
@@ -395,7 +481,7 @@ def add_args(parser):
         help="maximum steps per episode",
     )
     parser.add_argument(
-        "--batch_size", type=int, default=256, help="training batch size"
+        "--batch_size", type=int, default=512, help="training batch size"
     )
     parser.add_argument(
         "--tau", type=float, default=0.005, help="for model parameter % update"
@@ -404,7 +490,7 @@ def add_args(parser):
         "--actor_lr", type=float, default=1e-4, help="actor learning rate"
     )
     parser.add_argument(
-        "--critic_lr", type=float, default=1e-3, help="critic learning rate"
+        "--critic_lr", type=float, default=1e-4, help="critic learning rate"
     )
     parser.add_argument(
         "--gamma", type=float, default=0.99, help="gamma, the discount factor"
@@ -472,7 +558,13 @@ def add_args(parser):
         help="L2 regularization coeff for critic network",
     )
     parser.add_argument(
-        "--delay",
+        "--target_delay",
+        type=int,
+        default=2,
+        help="How many steps to go between target network updates",
+    )
+    parser.add_argument(
+        "--actor_delay",
         type=int,
         default=1,
         help="How many steps to go between actor updates",
@@ -514,4 +606,16 @@ def add_args(parser):
         "--discrete_actions",
         action="store_true",
         help="enable SAC Discrete update function for discrete action spaces",
+    )
+    parser.add_argument(
+        "--log_std_low",
+        type=float,
+        default=-10,
+        help="Lower bound for log std of action distribution.",
+    )
+    parser.add_argument(
+        "--log_std_high",
+        type=float,
+        default=2,
+        help="Upper bound for log std of action distribution.",
     )

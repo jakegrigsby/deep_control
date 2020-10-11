@@ -1,6 +1,8 @@
 import argparse
 import copy
+import os
 import time
+from itertools import chain
 
 import gym
 import numpy as np
@@ -9,9 +11,63 @@ import torch
 import torch.nn.functional as F
 import tqdm
 
-from . import envs, replay, run, utils
+from . import envs, nets, replay, run, utils
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+class TD3Agent:
+    def __init__(self, obs_space_size, act_space_size, max_action):
+        self.actor = nets.BaselineActor(obs_space_size, act_space_size, max_action)
+        self.critic1 = nets.BaselineCritic(obs_space_size, act_space_size)
+        self.critic2 = nets.BaselineCritic(obs_space_size, act_space_size)
+
+    def to(self, device):
+        self.actor = self.actor.to(device)
+        self.critic1 = self.critic1.to(device)
+        self.critic2 = self.critic2.to(device)
+
+    def eval(self):
+        self.actor.eval()
+        self.critic1.eval()
+        self.critic2.eval()
+
+    def train(self):
+        self.actor.train()
+        self.critic1.train()
+        self.critic2.train()
+
+    def save(self, path):
+        actor_path = os.path.join(path, "actor.pt")
+        critic1_path = os.path.join(path, "critic1.pt")
+        critic2_path = os.path.join(path, "critic2.pt")
+        torch.save(self.actor.state_dict(), actor_path)
+        torch.save(self.critic1.state_dict(), critic1_path)
+        torch.save(self.critic2.state_dict(), critic2_path)
+
+    def load(self, path):
+        actor_path = os.path.join(path, "actor.pt")
+        critic1_path = os.path.join(path, "critic1.pt")
+        critic2_path = os.path.join(path, "critic2.pt")
+        self.actor.load_state_dict(torch.load(actor_path))
+        self.critic1.load_state_dict(torch.load(critic1_path))
+        self.critic2.load_state_dict(torch.load(critic2_path))
+
+    def forward(self, state):
+        state = self.process_state(state)
+        self.actor.eval()
+        with torch.no_grad():
+            action = self.actor(state)
+        self.actor.train()
+        return self.process_act(action)
+
+    def process_state(self, state):
+        return torch.from_numpy(np.expand_dims(state, 0).astype(np.float32)).to(
+            utils.device
+        )
+
+    def process_act(self, act):
+        return np.squeeze(act.cpu().numpy(), 0)
 
 
 def td3(
@@ -58,6 +114,13 @@ def td3(
 
     Reference: https://arxiv.org/abs/1802.09477
     """
+    if save_to_disk or log_to_disk:
+        save_dir = utils.make_process_dirs(name)
+    if log_to_disk:
+        # create tb writer, save hparams
+        writer = tensorboardX.SummaryWriter(save_dir)
+        writer.add_hparams(locals(), {})
+
     agent.to(device)
     max_act = train_env.action_space.high[0]
 
@@ -76,26 +139,20 @@ def td3(
         theta=theta,
     )
 
-    critic1_optimizer = torch.optim.Adam(
-        agent.critic1.parameters(), lr=critic_lr, weight_decay=critic_l2
-    )
-    critic2_optimizer = torch.optim.Adam(
-        agent.critic2.parameters(), lr=critic_lr, weight_decay=critic_l2
+    # set up optimizers
+    critic_optimizer = torch.optim.Adam(
+        chain(agent.critic1.parameters(), agent.critic2.parameters(),),
+        lr=critic_lr,
+        weight_decay=critic_l2,
+        betas=(0.9, 0.999),
     )
     actor_optimizer = torch.optim.Adam(
         agent.actor.parameters(), lr=actor_lr, weight_decay=actor_l2
     )
 
-    if save_to_disk or log_to_disk:
-        save_dir = utils.make_process_dirs(name)
-    if log_to_disk:
-        # create tb writer, save hparams
-        writer = tensorboardX.SummaryWriter(save_dir)
-
     run.warmup_buffer(buffer, train_env, warmup_steps, max_episode_steps)
 
     done = True
-    learning_curve = []
 
     steps_iter = range(num_steps)
     if verbosity:
@@ -124,8 +181,7 @@ def td3(
                 target_agent=target_agent,
                 agent=agent,
                 actor_optimizer=actor_optimizer,
-                critic1_optimizer=critic1_optimizer,
-                critic2_optimizer=critic2_optimizer,
+                critic_optimizer=critic_optimizer,
                 max_act=train_env.action_space.high[0],
                 batch_size=batch_size,
                 target_noise_scale=target_noise_scale,
@@ -154,8 +210,6 @@ def td3(
             if log_to_disk:
                 writer.add_scalar("return", mean_return, step * transitions_per_step)
 
-            learning_curve.append((step * transitions_per_step, mean_return))
-
         if step % save_interval == 0 and save_to_disk:
             agent.save(save_dir)
 
@@ -169,8 +223,7 @@ def learn(
     target_agent,
     agent,
     actor_optimizer,
-    critic1_optimizer,
-    critic2_optimizer,
+    critic_optimizer,
     max_act,
     batch_size,
     target_noise_scale,
@@ -201,54 +254,48 @@ def learn(
 
     with torch.no_grad():
         # create critic targets (clipped double Q learning)
-        target_action_s2 = target_agent.actor(next_state_batch)
+        target_action_s1 = target_agent.actor(next_state_batch)
         target_noise = torch.clamp(
-            target_noise_scale * torch.randn(*target_action_s2.shape).to(device), -c, c
+            target_noise_scale * torch.randn(*target_action_s1.shape).to(device), -c, c
         )
         # target smoothing
-        target_action_s2 = torch.clamp(
-            target_action_s2 + target_noise, -max_act, max_act
+        target_action_s1 = torch.clamp(
+            target_action_s1 + target_noise, -max_act, max_act
         )
-        target_action_value_s2 = torch.min(
-            target_agent.critic1(next_state_batch, target_action_s2),
-            target_agent.critic2(next_state_batch, target_action_s2),
+        target_action_value_s1 = torch.min(
+            target_agent.critic1(next_state_batch, target_action_s1),
+            target_agent.critic2(next_state_batch, target_action_s1),
         )
-        td_target = reward_batch + gamma * (1.0 - done_batch) * target_action_value_s2
+        td_target = reward_batch + gamma * (1.0 - done_batch) * target_action_value_s1
 
-    # update first critic
+    # update critics
     agent_critic1_pred = agent.critic1(state_batch, action_batch)
     td_error1 = td_target - agent_critic1_pred
     if per:
         critic1_loss = (imp_weights * 0.5 * (td_error1 ** 2)).mean()
     else:
         critic1_loss = 0.5 * (td_error1 ** 2).mean()
-    critic1_optimizer.zero_grad()
-    critic1_loss.backward()
-    if critic_clip:
-        torch.nn.utils.clip_grad_norm_(agent.critic1.parameters(), critic_clip)
-    critic1_optimizer.step()
-
-    # update second critic
     agent_critic2_pred = agent.critic2(state_batch, action_batch)
     td_error2 = td_target - agent_critic2_pred
     if per:
         critic2_loss = (imp_weights * 0.5 * (td_error2 ** 2)).mean()
     else:
         critic2_loss = 0.5 * (td_error2 ** 2).mean()
-    critic2_optimizer.zero_grad()
-    critic2_loss.backward()
+    critic_loss = critic1_loss + critic2_loss
+    critic_optimizer.zero_grad()
+    critic_loss.backward()
     if critic_clip:
-        torch.nn.utils.clip_grad_norm_(agent.critic2.parameters(), critic_clip)
-    critic2_optimizer.step()
-
-    mean_critic_loss = (critic1_loss + critic2_loss).detach() / 2.0
+        torch.nn.utils.clip_grad_norm_(
+            chain(agent.critic1.parameters(), agent.critic2.parameters()), critic_clip
+        )
+    critic_optimizer.step()
 
     if update_policy:
         # actor update
         agent_actions = agent.actor(state_batch)
         actor_loss = -(
             agent.critic1(state_batch, agent_actions).mean()
-            - td_reg_coeff * mean_critic_loss
+            - td_reg_coeff * critic_loss.detach()
         )
         actor_optimizer.zero_grad()
         actor_loss.backward()

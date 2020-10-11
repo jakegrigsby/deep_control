@@ -272,9 +272,9 @@ class ReplayBuffer:
         assert self.action_shape, "Must provide shape of action space to ReplayBuffer"
 
     def _convert_dtype(self, dtype):
-        if dtype is int:
+        if dtype in [int, np.uint8, torch.uint8]:
             return torch.uint8
-        elif dtype is float:
+        elif dtype in [float, np.float32, np.float64, torch.float32, torch.float64]:
             return torch.float32
         else:
             raise ValueError(f"Uncreocgnized replay buffer dtype: {dtype}")

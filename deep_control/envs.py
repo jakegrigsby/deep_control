@@ -5,8 +5,6 @@ from collections import deque
 import gym
 import numpy as np
 
-from . import agents
-
 
 class ChannelsFirstWrapper(gym.ObservationWrapper):
     """
@@ -98,13 +96,13 @@ class GoalBasedWrapper(gym.ObservationWrapper):
 
 def add_gym_args(parser):
     """
-    Add a --env cl flag to an argparser
+    Add a --env_id cl flag to an argparser
     """
-    parser.add_argument("--env", type=str, default="Pendulum-v0")
+    parser.add_argument("--env_id", type=str, default="Pendulum-v0")
     parser.add_argument("--seed", type=int, default=231)
 
 
-def load_gym(env_id, seed=None, **_):
+def load_gym(env_id="CartPole-v1", seed=None, **_):
     """
     Load an environment from OpenAI gym (or pybullet_gym, if installed)
     """
@@ -116,7 +114,7 @@ def load_gym(env_id, seed=None, **_):
         pass
     env = gym.make(env_id)
     if seed is None:
-        seed = random.randint(1, 100)
+        seed = random.randint(1, 100000)
     env.seed(seed)
     return env
 
@@ -134,7 +132,7 @@ def add_dmc_args(parser):
     parser.add_argument("--width", type=int, default=84)
     parser.add_argument("--camera_id", type=int, default=0)
     parser.add_argument("--frame_skip", type=int, default=1)
-    parser.add_argument("--frame_stack", type=int, default=4)
+    parser.add_argument("--frame_stack", type=int, default=3)
     parser.add_argument("--channels_last", action="store_true")
     parser.add_argument("--rgb", action="store_true")
     parser.add_argument("--seed", type=int, default=231)
@@ -174,7 +172,7 @@ def load_atari(
     """
     env = gym.make(game_id)
     if seed is None:
-        seed = random.randint(1, 100)
+        seed = random.randint(1, 100000)
     env.seed(seed)
     env = gym.wrappers.AtariPreprocessing(
         env,
@@ -229,7 +227,7 @@ def load_dmc(
     import dmc2gym
 
     if seed is None:
-        seed = random.randint(1, 100)
+        seed = random.randint(1, 100000)
     env = dmc2gym.make(
         domain_name=domain_name,
         task_name=task_name,
@@ -249,51 +247,3 @@ def load_dmc(
     if from_pixels:
         env = FrameStack(env, num_stack=frame_stack)
     return env
-
-
-def load_exp(env_id, algo_type):
-    """
-    convenience function for loading common settings for gym envs,
-    and the correct baseline agent
-
-    ex: load_exp("FetchPush-v0", "sac") loads the FetchPush env,
-    deals with the dict obs spaces from goal-based envs, and loads
-    the state-based SAC agent.
-
-    load_exp("CarRacing-v0", "td3") loads the CarRacing env,
-    deals with the image obs spaces and loads the pixel-based TD3 agent.
-    """
-    env = load_gym(env_id)
-
-    # decide if env is a goal based (dict) env
-    if isinstance(env.observation_space, gym.spaces.dict.Dict):
-        env = GoalBasedWrapper(env)
-
-    # decide if we are learning from state or pixels
-    if len(env.observation_space.shape) > 1:
-        from_state = False
-        if env.observation_space.shape[0] > env.observation_space.shape[-1]:
-            # assume channels-last env and wrap to channels-first
-            env = ChannelsFirstWrapper(env)
-        obs_shape = env.observation_space.shape
-    else:
-        from_state = True
-        obs_shape = env.observation_space.shape[0]
-    action_shape = env.action_space.shape[0]
-    max_action = env.action_space.high[0]
-
-    if from_state:
-        if algo_type == "ddpg":
-            agent = agents.DDPGAgent(obs_shape, action_shape, max_action)
-        elif algo_type == "sac":
-            agent = agents.SACAgent(obs_shape, action_shape, max_action)
-        elif algo_type == "td3":
-            agent = agents.TD3Agent(obs_shape, action_shape, max_action)
-    else:
-        if algo_type == "ddpg":
-            agent = agents.PixelDDPGAgent(obs_shape, action_shape, max_action)
-        elif algo_type == "sac":
-            agent = agents.PixelSACAgent(obs_shape, action_shape, max_action)
-        elif algo_type == "td3":
-            agent = agents.PixelTD3Agent(obs_shape, action_shape, max_action)
-    return agent, env

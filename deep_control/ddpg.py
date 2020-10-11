@@ -1,5 +1,6 @@
 import argparse
 import copy
+import os
 import time
 
 import gym
@@ -9,9 +10,52 @@ import torch
 import torch.nn.functional as F
 import tqdm
 
-from . import envs, replay, run, utils
+from . import envs, nets, replay, run, utils
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+class DDPGAgent:
+    def __init__(self, obs_space_size, action_space_size, max_action):
+        self.actor = nets.BaselineActor(obs_space_size, action_space_size, max_action)
+        self.critic = nets.BaselineCritic(obs_space_size, action_space_size)
+
+    def to(self, device):
+        self.actor = self.actor.to(device)
+        self.critic = self.critic.to(device)
+
+    def eval(self):
+        self.actor.eval()
+        self.critic.eval()
+
+    def train(self):
+        self.actor.train()
+        self.critic.train()
+
+    def save(self, path):
+        actor_path = os.path.join(path, "actor.pt")
+        critic_path = os.path.join(path, "critic.pt")
+        torch.save(self.actor.state_dict(), actor_path)
+        torch.save(self.critic.state_dict(), critic_path)
+
+    def load(self, path):
+        actor_path = os.path.join(path, "actor.pt")
+        critic_path = os.path.join(path, "critic.pt")
+        self.actor.load_state_dict(torch.load(actor_path))
+        self.critic.load_state_dict(torch.load(critic_path))
+
+    def forward(self, state):
+        state = self.process_state(state)
+        self.actor.eval()
+        with torch.no_grad():
+            action = self.actor(state)
+        self.actor.train()
+        return np.squeeze(action.cpu().numpy(), 0)
+
+    def process_state(self, state):
+        return torch.from_numpy(np.expand_dims(state, 0).astype(np.float32)).to(
+            utils.device
+        )
 
 
 def ddpg(
@@ -52,6 +96,14 @@ def ddpg(
 
     Reference: https://arxiv.org/abs/1509.02971
     """
+    if save_to_disk or log_to_disk:
+        # create save directory for this run
+        save_dir = utils.make_process_dirs(name)
+    if log_to_disk:
+        # create tb writer, save hparams
+        writer = tensorboardX.SummaryWriter(save_dir)
+        writer.add_hparams(locals(), {})
+
     agent.to(device)
     max_act = train_env.action_space.high[0]
 
@@ -75,17 +127,9 @@ def ddpg(
         agent.actor.parameters(), lr=actor_lr, weight_decay=actor_l2
     )
 
-    if save_to_disk or log_to_disk:
-        # create save directory for this run
-        save_dir = utils.make_process_dirs(name)
-    if log_to_disk:
-        # create tb writer, save hparams
-        writer = tensorboardX.SummaryWriter(save_dir)
-
     run.warmup_buffer(buffer, train_env, warmup_steps, max_episode_steps)
 
     done = True
-    learning_curve = []
 
     steps_iter = range(num_steps)
     if verbosity:
@@ -128,12 +172,8 @@ def ddpg(
             mean_return = run.evaluate_agent(
                 agent, test_env, eval_episodes, max_episode_steps, render
             )
-            # because we usually care about logging the actual # of env interactions
-            # as the x axis, steps = step * transitions_per_step
             if log_to_disk:
                 writer.add_scalar("return", mean_return, step * transitions_per_step)
-            learning_curve.append((step * transitions_per_step, mean_return))
-
         if step % save_interval == 0 and save_to_disk:
             agent.save(save_dir)
 
@@ -171,13 +211,11 @@ def learn(
     reward_batch = reward_batch.to(device)
     done_batch = done_batch.to(device)
 
-    agent.train()
-
     # critic update
     with torch.no_grad():
-        target_action_s2 = target_agent.actor(next_state_batch)
-        target_action_value_s2 = target_agent.critic(next_state_batch, target_action_s2)
-        td_target = reward_batch + gamma * (1.0 - done_batch) * target_action_value_s2
+        target_action_s1 = target_agent.actor(next_state_batch)
+        target_action_value_s1 = target_agent.critic(next_state_batch, target_action_s1)
+        td_target = reward_batch + gamma * (1.0 - done_batch) * target_action_value_s1
 
     agent_critic_pred = agent.critic(state_batch, action_batch)
     td_error = td_target - agent_critic_pred
