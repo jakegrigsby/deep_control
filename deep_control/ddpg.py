@@ -74,7 +74,7 @@ def ddpg(
     sigma_start=0.2,
     sigma_final=0.1,
     sigma_anneal=100_000,
-    theta=.15,
+    theta=0.15,
     eval_interval=5000,
     eval_episodes=10,
     warmup_steps=1000,
@@ -292,7 +292,7 @@ def add_args(parser):
     parser.add_argument(
         "--theta",
         type=float,
-        default=.15,
+        default=0.15,
         help="theta for Ornstein Uhlenbeck process computation",
     )
     parser.add_argument(

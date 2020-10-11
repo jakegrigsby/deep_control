@@ -15,6 +15,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def clean_hparams_dict(hparams_dict):
     return {key: val for key, val in hparams_dict.items() if val}
 
+
 def torch_and_pad(x):
     if not isinstance(x, np.ndarray):
         x = np.array(x)

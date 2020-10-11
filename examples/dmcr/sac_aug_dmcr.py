@@ -69,7 +69,9 @@ def train_dmcr_sac(args):
     augmentation_lst = [aug(args.batch_size) for aug in eval(args.augmentations)]
     augmenter = AugmentationSequence(augmentation_lst)
 
-    agent = dc.sac_aug.PixelSACAgent(action_shape[0], max_action)
+    agent = dc.sac_aug.PixelSACAgent(
+        obs_shape, action_shape[0], max_action, args.log_std_low, args.log_std_high
+    )
 
     # select a replay buffer
     if args.prioritized_replay:
@@ -85,7 +87,7 @@ def train_dmcr_sac(args):
 
     dc.sac_aug.sac_aug(
         agent=agent,
-        train_envs=train_env,
+        train_env=train_env,
         test_env=test_env,
         buffer=buffer,
         augmenter=augmenter,
@@ -102,14 +104,11 @@ if __name__ == "__main__":
     parser.add_argument("--num_levels", type=int, default=1_000_000)
     parser.add_argument("--frame_stack", type=int, default=3)
     parser.add_argument("--frame_skip", type=int, default=2)
-    parser.add_argument("--augmentations", type=str, default="[DrQAug]")
     dc.sac_aug.add_args(parser)  # sac+aug related args
     args = parser.parse_args()
 
     # auto-adjust the max episode steps to compensate for the frame skipping.
     # dmc (and dmcr) automatically reset after 1k steps, but this allows for
     # infinite bootstrapping (used by CURL and SAC-AE)
-    args.max_episode_steps = (
-     1000 + args.frame_skip - 1
-    ) // args.frame_skip
+    args.max_episode_steps = (1000 + args.frame_skip - 1) // args.frame_skip
     train_dmcr_sac(args)
