@@ -22,7 +22,7 @@ class PixelSACAgent(sac.SACAgent):
         self, obs_shape, act_space_size, max_action, log_std_low, log_std_high
     ):
         self.encoder = nets.BigPixelEncoder(obs_shape, out_dim=50)
-        self.actor = nets.BigActor(
+        self.actor = nets.StochasticBigActor(
             50, act_space_size, max_action, log_std_low, log_std_high
         )
         self.critic1 = nets.BigCritic(50, act_space_size)
