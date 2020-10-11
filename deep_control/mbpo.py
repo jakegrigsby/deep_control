@@ -271,7 +271,7 @@ def add_args(parser):
     parser.add_argument(
         "--modelCls",
         type=str,
-        default="SimpleFeedForwardModel",
+        default="BNN",
         help="Class name for dynamics model. See models.py",
     )
     parser.add_argument(
@@ -508,81 +508,4 @@ def add_args(parser):
         type=float,
         default=-2,
         help="Upper bound for log std of action distribution",
-    )
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    add_args(parser)
-    dc.envs.add_gym_args(parser)
-    args = parser.parse_args()
-
-    train_env = dc.envs.load_gym(args.env, args.seed)
-    test_env = dc.envs.load_gym(args.env, args.seed)
-
-    obs_space = train_env.observation_space
-    act_space = train_env.action_space
-
-    agent = dc.agents.SACAgent(
-        obs_space.shape[0], act_space.shape[0], max_action=act_space.high[0]
-    )
-
-    modelCls = eval(f"models.{args.modelCls}")
-
-    if args.prioritized_replay:
-        buffer_t = dc.replay.PrioritizedReplayBuffer
-    else:
-        buffer_t = dc.replay.ReplayBuffer
-    buffer = buffer_t(
-        args.buffer_size,
-        state_shape=obs_space.shape,
-        action_shape=act_space.shape,
-        state_dtype=float,
-    )
-
-    agent = mbpo(
-        agent,
-        train_env,
-        test_env,
-        buffer,
-        modelCls,
-        ensemble_size=args.ensemble_size,
-        num_steps=args.num_steps,
-        model_buffer_size=args.model_buffer_size,
-        warmup_steps=args.warmup_steps,
-        real_env_steps_per_epoch=args.real_env_steps_per_epoch,
-        model_rollouts_per_real_env_step=args.model_rollouts_per_real_env_step,
-        model_parallel_rollouts=args.model_parallel_rollouts,
-        policy_updates_per_real_env_step=args.policy_updates_per_real_env_step,
-        max_rollout_length_start=args.max_rollout_length_start,
-        max_rollout_length_final=args.max_rollout_length_final,
-        max_rollout_length_anneal_start=args.max_rollout_length_anneal_start,
-        max_rollout_length_anneal_end=args.max_rollout_length_anneal_end,
-        max_episode_steps=args.max_episode_steps,
-        tau=args.tau,
-        actor_lr=args.actor_lr,
-        critic_lr=args.critic_lr,
-        alpha_lr=args.alpha_lr,
-        init_alpha=args.init_alpha,
-        gamma=args.gamma,
-        batch_size=args.batch_size,
-        eval_interval=args.eval_interval,
-        eval_episodes=args.eval_episodes,
-        actor_clip=args.actor_clip,
-        critic_clip=args.critic_clip,
-        actor_l2=args.actor_l2,
-        critic_l2=args.critic_l2,
-        alpha=args.alpha,
-        delay=args.delay,
-        save_interval=args.save_interval,
-        name=args.name,
-        render=args.render,
-        verbosity=args.verbosity,
-        save_to_disk=not args.skip_save_to_disk,
-        log_to_disk=not args.skip_log_to_disk,
-        model_val_split=args.model_val_split,
-        model_lr=args.model_lr,
-        model_early_stopping_patience=args.model_early_stopping_patience,
-        model_batch_size=args.model_batch_size,
-        model_max_epochs=args.model_max_epochs,
     )
