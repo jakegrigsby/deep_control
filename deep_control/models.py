@@ -237,10 +237,15 @@ class SimpleModelEnsemble(nn.Module):
         for model in self.ensemble:
             model.to(device)
 
-    def fit(self, *args, **kwargs):
-        # TODO: parallelize this?
+    def sample_with_replacement(self, transitions):
+        num_samples = len(transitions[0])
+        indxs = torch.randint(num_samples, (num_samples,))
+        return tuple([x[indxs] for x in transitions])
+
+    def fit(self, transitions, *args, **kwargs):
+        transitions = self.sample_with_replacement(transitions)
         for model in self.ensemble:
-            model.fit(*args, **kwargs)
+            model.fit(transitions, *args, **kwargs)
 
 
 """
