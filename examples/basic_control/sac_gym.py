@@ -5,15 +5,15 @@ import deep_control as dc
 
 def train_gym_sac(args):
     # same training and testing seed
-    train_env = dc.envs.load_gym(args.env, args.seed)
-    test_env = dc.envs.load_gym(args.env, args.seed)
+    train_env = dc.envs.load_gym(args.env_id, args.seed)
+    test_env = dc.envs.load_gym(args.env_id, args.seed)
 
     state_space = train_env.observation_space
     action_space = train_env.action_space
 
     # create agent
-    agent = dc.agents.SACAgent(
-        state_space.shape[0], action_space.shape[0], max_action=action_space.high[0]
+    agent = dc.sac.SACAgent(
+        state_space.shape[0], action_space.shape[0], args.log_std_low, args.log_std_high,
     )
 
     # create replay buffer
@@ -39,5 +39,5 @@ if __name__ == "__main__":
     dc.envs.add_gym_args(parser)
     dc.sac.add_args(parser)
     args = parser.parse_args()
-
+    args.max_episode_steps = 1000
     train_gym_sac(args)

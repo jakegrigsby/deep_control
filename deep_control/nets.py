@@ -92,18 +92,12 @@ class SmallPixelEncoder(nn.Module):
 
 class StochasticBigActor(nn.Module):
     def __init__(
-        self,
-        state_space_size,
-        act_space_size,
-        max_action,
-        log_std_low=-10,
-        log_std_high=2,
+        self, state_space_size, act_space_size, log_std_low=-10, log_std_high=2,
     ):
         super().__init__()
         self.fc1 = nn.Linear(state_space_size, 1024)
         self.fc2 = nn.Linear(1024, 1024)
         self.fc3 = nn.Linear(1024, 2 * act_space_size)
-        self.max_act = max_action
         self.log_std_low = log_std_low
         self.log_std_high = log_std_high
         self.apply(weight_init)
@@ -140,17 +134,16 @@ class BigCritic(nn.Module):
 
 
 class BaselineActor(nn.Module):
-    def __init__(self, state_size, action_size, max_action):
+    def __init__(self, state_size, action_size):
         super().__init__()
         self.fc1 = nn.Linear(state_size, 400)
         self.fc2 = nn.Linear(400, 300)
         self.out = nn.Linear(300, action_size)
-        self.max_act = max_action
 
     def forward(self, state):
         x = F.relu(self.fc1(state))
         x = F.relu(self.fc2(x))
-        act = self.max_act * torch.tanh(self.out(x))
+        act = torch.tanh(self.out(x))
         return act
 
 
@@ -218,12 +211,11 @@ class SquashedNormal(pyd.transformed_distribution.TransformedDistribution):
 
 
 class StochasticActor(nn.Module):
-    def __init__(self, obs_size, action_size, max_action, log_std_low, log_std_high):
+    def __init__(self, obs_size, action_size, log_std_low, log_std_high):
         super().__init__()
         self.fc1 = nn.Linear(obs_size, 400)
         self.fc2 = nn.Linear(400, 300)
         self.fc3 = nn.Linear(300, 2 * action_size)
-        self.max_act = max_action
         self.log_std_low = log_std_low
         self.log_std_high = log_std_high
 

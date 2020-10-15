@@ -11,7 +11,7 @@ def train_dmc_td3(args):
     action_shape = train_env.action_space.shape
     max_action = train_env.action_space.high[0]
 
-    agent = dc.td3.TD3Agent(obs_shape[0], action_shape[0], max_action)
+    agent = dc.td3.TD3Agent(obs_shape[0], action_shape[0])
 
     # select a replay buffer
     if args.prioritized_replay:

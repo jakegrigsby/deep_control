@@ -11,7 +11,7 @@ def train_dmc_ddpg(args):
     action_shape = train_env.action_space.shape
     max_action = train_env.action_space.high[0]
 
-    agent = dc.ddpg.DDPGAgent(obs_shape[0], action_shape[0], max_action)
+    agent = dc.ddpg.DDPGAgent(obs_shape[0], action_shape[0])
 
     # select a replay buffer
     if args.prioritized_replay:
