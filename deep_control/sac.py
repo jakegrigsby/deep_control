@@ -143,7 +143,7 @@ def sac(
     **kwargs,
 ):
     """
-    Train `agent` on `env` with Soft Actor Critic algorithm.
+    Train `agent` on `train_env` with Soft Actor Critic algorithm, ane evaluate on `test_env`.
 
     Reference: https://arxiv.org/abs/1801.01290 and https://arxiv.org/abs/1812.05905
 

@@ -89,7 +89,7 @@ def sac_aug(
     num_steps=250_000,
     transitions_per_step=1,
     max_episode_steps=100_000,
-    batch_size=128,
+    batch_size=256,
     mlp_tau=0.01,
     encoder_tau=0.05,
     actor_lr=1e-3,
@@ -411,7 +411,7 @@ def add_args(parser):
         help="Maximum steps per episode",
     )
     parser.add_argument(
-        "--batch_size", type=int, default=128, help="Training batch size"
+        "--batch_size", type=int, default=256, help="Training batch size"
     )
     parser.add_argument(
         "--mlp_tau",

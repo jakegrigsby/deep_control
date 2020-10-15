@@ -3,6 +3,7 @@ import random
 import gym
 import numpy as np
 import torch
+from torch import distributions as pyd
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -49,7 +50,7 @@ class ModeledEnv(gym.Env):
         self._current_state = pred_next_state
         pred_next_state_np = pred_next_state.cpu().numpy()
         pred_rew_float = float(pred_rew.cpu())
-        pred_done_bool = bool(pred_done.cpu().round())
+        pred_done_bool = bool(pred_done.clamp(0.0, 1.0).cpu().round())
         return pred_next_state_np, pred_rew_float, pred_done_bool, {}  # empty info dict
 
 
@@ -107,7 +108,7 @@ class ParallelModeledEnv(ModeledEnv):
             self._reset_idxs(idxs_to_reset)
         return len(idxs_to_reset)
 
-    def step(self, action):
+    def step(self, action, deterministic=False):
         """
         Assumes action is a torch Tensor of shape (parallel_envs, *action_space.shape),
         and on the correct device
@@ -116,9 +117,17 @@ class ParallelModeledEnv(ModeledEnv):
         """
         state = self._current_state
         with torch.no_grad():
-            pred_next_state, pred_rew, pred_done = self.model(state, action)
+            pred_s1_del_mean, pred_s1_del_log_var, pred_rew, pred_done = self.model(
+                state, action
+            )
+        if deterministic:
+            pred_next_state = state + pred_s1_del_mean
+        else:
+            pred_s1_del_std = torch.sqrt(pred_s1_del_log_var.exp())
+            s1_delta_dist = pyd.Normal(pred_s1_del_mean, pred_s1_del_std)
+            pred_next_state = state + s1_delta_dist.sample()
         self._current_state = pred_next_state
-        pred_done_bool = pred_done.round().bool()
+        pred_done_bool = pred_done.clamp(0.0, 1.0).round().bool()
         self.steps += 1
         self.dones = pred_done_bool
         return pred_next_state, pred_rew, pred_done_bool, {}  # empty info dict

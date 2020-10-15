@@ -275,7 +275,7 @@ def add_args(parser):
     parser.add_argument(
         "--modelCls",
         type=str,
-        default="BNN",
+        default="SimpleFeedForwardModel",
         help="Class name for dynamics model. See models.py",
     )
     parser.add_argument(
