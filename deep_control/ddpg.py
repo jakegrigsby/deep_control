@@ -16,8 +16,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class DDPGAgent:
-    def __init__(self, obs_space_size, action_space_size, max_action):
-        self.actor = nets.BaselineActor(obs_space_size, action_space_size, max_action)
+    def __init__(self, obs_space_size, action_space_size):
+        self.actor = nets.BaselineActor(obs_space_size, action_space_size)
         self.critic = nets.BaselineCritic(obs_space_size, action_space_size)
 
     def to(self, device):
@@ -106,7 +106,6 @@ def ddpg(
         writer.add_hparams(locals(), {})
 
     agent.to(device)
-    max_act = train_env.action_space.high[0]
 
     # initialize target networks
     target_agent = copy.deepcopy(agent)
@@ -119,7 +118,7 @@ def ddpg(
         size=train_env.action_space.shape,
         sigma=sigma_start,
         sigma_min=sigma_final,
-        n_steps_annealed=sigma_anneal,
+        n_steps_annealing=sigma_anneal,
     )
 
     critic_optimizer = torch.optim.Adam(
@@ -145,7 +144,7 @@ def ddpg(
                 steps_this_ep = 0
                 done = False
             action = agent.forward(state)
-            noisy_action = run.exploration_noise(action, random_process, max_act)
+            noisy_action = run.exploration_noise(action, random_process)
             next_state, reward, done, info = train_env.step(noisy_action)
             buffer.push(state, noisy_action, reward, next_state, done)
             state = next_state
