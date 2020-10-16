@@ -90,36 +90,61 @@ class SmallPixelEncoder(nn.Module):
         return state
 
 
-class StochasticBigActor(nn.Module):
+class SimpleSquashedNormal:
+    def __init__(self, normal_dist):
+        self.dist = normal_dist
+        self.mean = normal_dist.mean
+
+    def sample(self):
+        sample = self.dist.sample()
+        return torch.tanh(sample)
+
+    def rsample(self):
+        sample = self.dist.rsample()
+        return torch.tanh(sample)
+
+    def log_prob(self, action):
+        logp_a = self.dist.log_prob(action).sum(axis=-1)
+        logp_a -= (2 * (np.log(2) - action - F.softplus(-2 * action))).sum(axis=1)
+        return logp_a
+
+
+class StochasticActor(nn.Module):
     def __init__(
         self,
         state_space_size,
         act_space_size,
-        max_action,
         log_std_low=-10,
         log_std_high=2,
+        dist_impl="pyd",
     ):
         super().__init__()
         self.fc1 = nn.Linear(state_space_size, 1024)
         self.fc2 = nn.Linear(1024, 1024)
         self.fc3 = nn.Linear(1024, 2 * act_space_size)
-        self.max_act = max_action
         self.log_std_low = log_std_low
         self.log_std_high = log_std_high
         self.apply(weight_init)
+        assert dist_impl in ["pyd", "simple"]
+        self.dist_impl = dist_impl
 
     def forward(self, state):
         x = F.relu(self.fc1(state))
         x = F.relu(self.fc2(x))
         out = self.fc3(x)
-        # split output into mean log_std of action distribution
         mu, log_std = out.chunk(2, dim=1)
-        log_std = torch.tanh(log_std)
-        log_std = self.log_std_low + 0.5 * (self.log_std_high - self.log_std_low) * (
-            log_std + 1
-        )
-        std = log_std.exp()
-        dist = SquashedNormal(mu, std)
+        if self.dist_impl == "pyd":
+            log_std = torch.tanh(log_std)
+            log_std = self.log_std_low + 0.5 * (
+                self.log_std_high - self.log_std_low
+            ) * (log_std + 1)
+            std = log_std.exp()
+            dist = SquashedNormal(mu, std)
+        elif self.dist_impl == "simple":
+            log_std = log_std.clamp(self.log_std_low, self.log_std_high)
+            std = log_std.exp()
+            base_dist = pyd.Normal(mu, std)
+            dist = SimpleSquashedNormal(base_dist)
         return dist
 
 
@@ -140,17 +165,16 @@ class BigCritic(nn.Module):
 
 
 class BaselineActor(nn.Module):
-    def __init__(self, state_size, action_size, max_action):
+    def __init__(self, state_size, action_size):
         super().__init__()
         self.fc1 = nn.Linear(state_size, 400)
         self.fc2 = nn.Linear(400, 300)
         self.out = nn.Linear(300, action_size)
-        self.max_act = max_action
 
     def forward(self, state):
         x = F.relu(self.fc1(state))
         x = F.relu(self.fc2(x))
-        act = self.max_act * torch.tanh(self.out(x))
+        act = torch.tanh(self.out(x))
         return act
 
 
@@ -170,7 +194,7 @@ class BaselineCritic(nn.Module):
 
 
 """
-Credit for actor distribution code: https://github.com/denisyarats/pytorch_sac_ae/blob/master/sac_ae.py
+Credit for actor distribution code: https://github.com/denisyarats/pytorch_sac/blob/master/agent/actor.py
 """
 
 
@@ -217,27 +241,20 @@ class SquashedNormal(pyd.transformed_distribution.TransformedDistribution):
         return mu
 
 
-class StochasticActor(nn.Module):
-    def __init__(self, obs_size, action_size, max_action, log_std_low, log_std_high):
+class GracBaselineActor(nn.Module):
+    def __init__(self, obs_size, action_size):
         super().__init__()
         self.fc1 = nn.Linear(obs_size, 400)
         self.fc2 = nn.Linear(400, 300)
-        self.fc3 = nn.Linear(300, 2 * action_size)
-        self.max_act = max_action
-        self.log_std_low = log_std_low
-        self.log_std_high = log_std_high
+        self.fc_mean = nn.Linear(300, action_size)
+        self.fc_std = nn.Linear(300, action_size)
 
     def forward(self, state, stochastic=False):
         x = F.relu(self.fc1(state))
         x = F.relu(self.fc2(x))
-        x = F.relu(self.fc3(x))
-        mu, log_std = x.chunk(2, dim=1)
-        log_std = torch.tanh(log_std)
-        log_std = self.log_std_low + 0.5 * (self.log_std_high - self.log_std_low) * (
-            log_std + 1
-        )
-        std = log_std.exp()
-        dist = SquashedNormal(mu, std)
+        mean = torch.tanh(self.fc_mean(x))
+        std = F.softplus(self.fc_std(x)) + 1e-3
+        dist = pyd.Normal(mean, std)
         return dist
 
 

@@ -2,13 +2,12 @@ import random
 
 import torch
 import torch.nn.functional as F
-from blitz.modules import BayesianLinear
-from blitz.utils import variational_estimator
 from pytorch_lightning import Trainer
 from pytorch_lightning import loggers as pl_loggers
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.core.lightning import LightningModule
 from torch import nn
+from torch import distributions as pyd
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -42,21 +41,34 @@ class DynamicsModel(LightningModule):
         and not the rewards or dones...
         """
         s, a, r, s1, d = batch
-        pred_s1, pred_r, pred_d = self(s, a)
-        loss = (
-            F.binary_cross_entropy(pred_d, d)
-            + F.mse_loss(pred_s1, s1)
-            + F.mse_loss(pred_r, r)
-        )
+        pred_s1_del_mean, pred_s1_del_log_var, pred_r, pred_d = self(s, a)
+        d_loss = F.binary_cross_entropy(pred_d, d)
+        r_loss = F.mse_loss(pred_r, r)
+
+        s1_targets = s1 - s
+        inv_var = (-pred_s1_del_log_var).exp()
+        s_loss = ((pred_s1_del_mean - s1_targets) ** 2 * inv_var).mean()
+        s_loss += pred_s1_del_log_var.mean()
+        s_loss += 0.01 * self.max_logvar.sum() - 0.01 * self.min_logvar.sum()
+
+        loss = d_loss + s_loss + r_loss
+
         return {"loss": loss, "log": {"train_loss": loss}}
 
     def validation_step(self, batch, batch_idx):
         s, a, r, s1, d = batch
-        pred_s1, pred_r, pred_d = self(s, a)
+        pred_s1_del_mean, pred_s1_del_log_var, pred_r, pred_d = self(s, a)
         d_loss = F.binary_cross_entropy(pred_d, d)
-        s_loss = F.mse_loss(pred_s1, s1)
         r_loss = F.mse_loss(pred_r, r)
+
+        s1_targets = s1 - s
+        inv_var = (-pred_s1_del_log_var).exp()
+        s_loss = ((pred_s1_del_mean - s1_targets) ** 2 * inv_var).mean()
+        s_loss += pred_s1_del_log_var.mean()
+        s_loss += 0.01 * self.max_logvar.sum() - 0.01 * self.min_logvar.sum()
+
         loss = d_loss + s_loss + r_loss
+
         return {
             "val_loss": loss,
             "done_loss": d_loss,
@@ -122,9 +134,9 @@ class DynamicsModel(LightningModule):
         d = d.float()
         # update normalization stats with new batch
         self._state_mean = torch.mean(s, axis=0).to(device)
-        self._state_var = torch.var(s, axis=0).to(device)
+        self._state_std = torch.std(s, axis=0).to(device)
         self._action_mean = torch.mean(a, axis=0).to(device)
-        self._action_var = torch.mean(a, axis=0).to(device)
+        self._action_std = torch.std(a, axis=0).to(device)
         num_samples = len(s)
         val_set_size = int(num_samples * val_split)
         train_set_size = num_samples - val_set_size
@@ -160,8 +172,6 @@ class SimpleFeedForwardModel(DynamicsModel):
     feedforward network that takes in the current state
     and action and outputs a prediction for the next state,
     the reward and the done bool of that transition.
-
-    Loosely based on the model used in ME-TRPO
     """
 
     def __init__(self, obs_dim, act_dim):
@@ -170,26 +180,77 @@ class SimpleFeedForwardModel(DynamicsModel):
         self.act_dim = act_dim
         self._state_mean = torch.zeros((1, obs_dim)).to(device)
         self._action_mean = torch.zeros((1, act_dim)).to(device)
-        self._state_var = torch.ones((1, obs_dim)).to(device)
-        self._action_var = torch.ones((1, act_dim)).to(device)
+        self._state_std = torch.ones((1, obs_dim)).to(device)
+        self._action_std = torch.ones((1, act_dim)).to(device)
+        self.max_logvar = torch.ones((1, obs_dim), requires_grad=True).to(device)
+        self.min_logvar = -torch.ones((1, obs_dim), requires_grad=True).to(device)
 
         self.fc1 = nn.Linear(obs_dim + act_dim, 1024)
         self.fc2 = nn.Linear(1024, 1024)
-        self.next_state_delta_fc = nn.Linear(1024, obs_dim)
+        self.next_state_delta_fc = nn.Linear(1024, 2 * obs_dim)
         self.reward_fc = nn.Linear(1024, 1)
         self.done_fc = nn.Linear(1024, 1)
 
     def forward(self, state, action):
-        state = (state - self._state_mean) / (self._state_var + 1e-5)
-        action = (action - self._action_mean) / (self._action_var + 1e-5)
+        state = (state - self._state_mean) / (self._state_std + 1e-5)
+        action = (action - self._action_mean) / (self._action_std + 1e-5)
         x = torch.cat((state, action), dim=1)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        next_state = state + self.next_state_delta_fc(x)
+        next_state_del_mean, next_state_del_log_var = self.next_state_delta_fc(x).chunk(
+            2, dim=1
+        )
+        # softplus trick
+        next_state_del_log_var = self.max_logvar - F.softplus(
+            self.max_logvar - next_state_del_log_var
+        )
+        next_state_del_log_var = self.min_logvar + F.softplus(
+            next_state_del_log_var - self.min_logvar
+        )
+
         reward = self.reward_fc(x)
         done = torch.sigmoid(self.done_fc(x))
-        return next_state, reward, done
+        return next_state_del_mean, next_state_del_log_var, reward, done
 
+
+class SimpleModelEnsemble(nn.Module):
+    """
+    A risk in model-based RL is that the agent will learn
+    to exploit inaccuracies in the simulated/modeled env.
+    (e.g. actions that give unrealisticly high rewards). To
+    combat this, most methods use an ensemble of models. When
+    doing rollouts with the simulated env, we pick a random model
+    from the ensemble to make each transition prediction. This
+    limits the agent's ability to overfit to any one particular model's
+    bad predictions.
+    """
+
+    def __init__(self, ensemble):
+        super().__init__()
+        self.ensemble = ensemble
+
+    def forward(self, state, action, *args, **kwargs):
+        model = random.choice(self.ensemble)
+        return model(state, action, *args, **kwargs)
+
+    def to(self, device):
+        for model in self.ensemble:
+            model.to(device)
+
+    def sample_with_replacement(self, transitions):
+        num_samples = len(transitions[0])
+        indxs = torch.randint(num_samples, (num_samples,))
+        return tuple([x[indxs] for x in transitions])
+
+    def fit(self, transitions, *args, **kwargs):
+        transitions = self.sample_with_replacement(transitions)
+        for model in self.ensemble:
+            model.fit(transitions, *args, **kwargs)
+
+
+"""
+from blitz.modules import BayesianLinear
+from blitz.utils import variational_estimator
 
 def swish(x):
     return x * torch.sigmoid(x)
@@ -270,26 +331,40 @@ class BNN(DynamicsModel):
             "rew_loss": r_loss,
         }
 
-
-class SimpleModelEnsemble(nn.Module):
-    """
-    A risk in model-based RL is that the agent will learn
-    to exploit inaccuracies in the simulated/modeled env.
-    (e.g. actions that give unrealisticly high rewards). To
-    combat this, most methods use an ensemble of models. When
-    doing rollouts with the simulated env, we pick a random model
-    from the ensemble to make each transition prediction. This
-    limits the agent's ability to overfit to any one particular model's
-    bad predictions.
-    """
-
+class StochasticModelEnsemble(nn.Module):
     def __init__(self, ensemble):
         super().__init__()
         self.ensemble = ensemble
 
-    def forward(self, state, action):
-        model = random.choice(self.ensemble)
-        return model(state, action)
+    def forward(self, state, action, stochastic=True):
+        pred_next_states = []
+        pred_rews = []
+        pred_dones = []
+        for model in self.ensemble:
+            next_state, rew, done = model(state, action)
+            pred_next_states.append(next_state.unsqueeze(0))
+            pred_rews.append(rew.unsqueeze(0))
+            pred_dones.append(done.unsqueeze(0))
+        pred_next_states = torch.cat(pred_next_states, dim=0)
+        pred_rews = torch.cat(pred_rews, dim=0)
+        pred_dones = torch.cat(pred_dones, dim=0)
+
+        next_state_std = pred_next_states.std(0)
+        next_state_mean = pred_next_states.mean(0)
+        next_state_dist = pyd.Normal(next_state_mean, next_state_std)
+
+        rew_std = pred_rews.std(0)
+        rew_mean = pred_rews.mean(0)
+        rew_dist = pyd.Normal(rew_mean, rew_std)
+
+        done_std = pred_dones.std(0)
+        done_mean = pred_dones.mean(0)
+        done_dist = pyd.Normal(done_mean, done_std)
+
+        if stochastic:
+            return next_state_dist.sample(), rew_dist.sample(), done_dist.sample()
+        else:
+            return next_state_dist.mean, rew_dist.mean, done_dist.mean
 
     def to(self, device):
         for model in self.ensemble:
@@ -299,3 +374,5 @@ class SimpleModelEnsemble(nn.Module):
         # TODO: parallelize this?
         for model in self.ensemble:
             model.fit(*args, **kwargs)
+
+"""

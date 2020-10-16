@@ -16,6 +16,20 @@ def clean_hparams_dict(hparams_dict):
     return {key: val for key, val in hparams_dict.items() if val}
 
 
+def get_grad_norm(model):
+    total_norm = 0.0
+    for p in model.parameters():
+        try:
+            param = p.grad.data
+        except AttributeError:
+            continue
+        else:
+            param_norm = param.norm(2)
+            total_norm += param_norm.item() ** 2
+    total_norm = total_norm ** (1.0 / 2)
+    return total_norm
+
+
 def torch_and_pad(x):
     if not isinstance(x, np.ndarray):
         x = np.array(x)

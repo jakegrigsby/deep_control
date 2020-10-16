@@ -5,16 +5,14 @@ import deep_control as dc
 
 def train_gym_td3(args):
     # same training and testing seed
-    train_env = dc.envs.load_gym(args.env, args.seed)
-    test_env = dc.envs.load_gym(args.env, args.seed)
+    train_env = dc.envs.load_gym(args.env_id, args.seed)
+    test_env = dc.envs.load_gym(args.env_id, args.seed)
 
     state_space = train_env.observation_space
     action_space = train_env.action_space
 
     # create agent
-    agent = dc.agents.TD3Agent(
-        state_space.shape[0], action_space.shape[0], max_action=action_space.high[0]
-    )
+    agent = dc.td3.TD3Agent(state_space.shape[0], action_space.shape[0])
 
     # create replay buffer
     if args.prioritized_replay:
@@ -29,15 +27,11 @@ def train_gym_td3(args):
     )
 
     # run td3
-    dc.td3.td3(
-        agent=agent, train_env=train_env, test_env=test_env, buffer=buffer, **vars(args)
-    )
-
+    dc.td3.td3(agent=agent, train_env=train_env, test_env=test_env, buffer=buffer, **vars(args))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     dc.envs.add_gym_args(parser)
     dc.td3.add_args(parser)
     args = parser.parse_args()
-
     train_gym_td3(args)

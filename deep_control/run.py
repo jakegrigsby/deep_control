@@ -27,8 +27,8 @@ def run_env(agent, env, episodes, max_steps, render=False, verbosity=1):
     return torch.tensor(episode_return_history)
 
 
-def exploration_noise(action, random_process, max_action):
-    return np.clip(action + random_process.sample(), -max_action, max_action)
+def exploration_noise(action, random_process):
+    return np.clip(action + random_process.sample(), -1.0, 1.0)
 
 
 def evaluate_agent(

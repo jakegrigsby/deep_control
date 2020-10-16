@@ -24,6 +24,22 @@ class ChannelsFirstWrapper(gym.ObservationWrapper):
         return np.ascontiguousarray(frame)
 
 
+class NormalizeContinuousActionSpace(gym.ActionWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self._true_action_space = env.action_space
+        self.action_space = gym.spaces.Box(
+            low=-1.0, high=1.0, shape=self._true_action_space.shape, dtype=np.float32,
+        )
+
+    def action(self, action):
+        true_delta = self._true_action_space.high - self._true_action_space.low
+        norm_delta = self.action_space.high - self.action_space.low
+        action = (action - self.action_space.low) / norm_delta
+        action = action * true_delta + self._true_action_space.low
+        return action
+
+
 class DiscreteActionWrapper(gym.ActionWrapper):
     """
     This is intended to let the action be any scalar
@@ -113,6 +129,7 @@ def load_gym(env_id="CartPole-v1", seed=None, **_):
     except ImportError:
         pass
     env = gym.make(env_id)
+    env = NormalizeContinuousActionSpace(env)
     if seed is None:
         seed = random.randint(1, 100000)
     env.seed(seed)

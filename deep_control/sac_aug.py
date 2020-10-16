@@ -18,16 +18,13 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class PixelSACAgent(sac.SACAgent):
-    def __init__(
-        self, obs_shape, act_space_size, max_action, log_std_low, log_std_high
-    ):
+    def __init__(self, obs_shape, act_space_size, log_std_low, log_std_high):
         self.encoder = nets.BigPixelEncoder(obs_shape, out_dim=50)
         self.actor = nets.StochasticBigActor(
-            50, act_space_size, max_action, log_std_low, log_std_high
+            50, act_space_size, log_std_low, log_std_high
         )
         self.critic1 = nets.BigCritic(50, act_space_size)
         self.critic2 = nets.BigCritic(50, act_space_size)
-        self.max_act = max_action
         self.log_std_low = log_std_low
         self.log_std_high = log_std_high
 
@@ -89,7 +86,7 @@ def sac_aug(
     num_steps=250_000,
     transitions_per_step=1,
     max_episode_steps=100_000,
-    batch_size=128,
+    batch_size=256,
     mlp_tau=0.01,
     encoder_tau=0.05,
     actor_lr=1e-3,
@@ -411,7 +408,7 @@ def add_args(parser):
         help="Maximum steps per episode",
     )
     parser.add_argument(
-        "--batch_size", type=int, default=128, help="Training batch size"
+        "--batch_size", type=int, default=256, help="Training batch size"
     )
     parser.add_argument(
         "--mlp_tau",

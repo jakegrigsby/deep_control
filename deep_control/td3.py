@@ -17,8 +17,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class TD3Agent:
-    def __init__(self, obs_space_size, act_space_size, max_action):
-        self.actor = nets.BaselineActor(obs_space_size, act_space_size, max_action)
+    def __init__(self, obs_space_size, act_space_size):
+        self.actor = nets.BaselineActor(obs_space_size, act_space_size)
         self.critic1 = nets.BaselineCritic(obs_space_size, act_space_size)
         self.critic2 = nets.BaselineCritic(obs_space_size, act_space_size)
 
@@ -122,7 +122,6 @@ def td3(
         writer.add_hparams(locals(), {})
 
     agent.to(device)
-    max_act = train_env.action_space.high[0]
 
     # initialize target networks
     target_agent = copy.deepcopy(agent)
@@ -166,7 +165,7 @@ def td3(
                 steps_this_ep = 0
                 done = False
             action = agent.forward(state)
-            noisy_action = run.exploration_noise(action, random_process, max_act)
+            noisy_action = run.exploration_noise(action, random_process)
             next_state, reward, done, info = train_env.step(noisy_action)
             buffer.push(state, noisy_action, reward, next_state, done)
             state = next_state
@@ -182,7 +181,6 @@ def td3(
                 agent=agent,
                 actor_optimizer=actor_optimizer,
                 critic_optimizer=critic_optimizer,
-                max_act=train_env.action_space.high[0],
                 batch_size=batch_size,
                 target_noise_scale=target_noise_scale,
                 c=c,
@@ -224,7 +222,6 @@ def learn(
     agent,
     actor_optimizer,
     critic_optimizer,
-    max_act,
     batch_size,
     target_noise_scale,
     c,
@@ -259,9 +256,7 @@ def learn(
             target_noise_scale * torch.randn(*target_action_s1.shape).to(device), -c, c
         )
         # target smoothing
-        target_action_s1 = torch.clamp(
-            target_action_s1 + target_noise, -max_act, max_act
-        )
+        target_action_s1 = torch.clamp(target_action_s1 + target_noise, -1.0, 1.0,)
         target_action_value_s1 = torch.min(
             target_agent.critic1(next_state_batch, target_action_s1),
             target_agent.critic2(next_state_batch, target_action_s1),

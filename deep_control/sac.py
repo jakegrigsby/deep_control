@@ -18,15 +18,12 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class SACAgent:
-    def __init__(
-        self, obs_space_size, act_space_size, max_action, log_std_low, log_std_high
-    ):
-        self.actor = nets.StochasticBigActor(
-            obs_space_size, act_space_size, max_action, log_std_low, log_std_high
+    def __init__(self, obs_space_size, act_space_size, log_std_low, log_std_high):
+        self.actor = nets.StochasticActor(
+            obs_space_size, act_space_size, log_std_low, log_std_high, dist_impl="pyd",
         )
         self.critic1 = nets.BigCritic(obs_space_size, act_space_size)
         self.critic2 = nets.BigCritic(obs_space_size, act_space_size)
-        self.max_act = max_action
 
     def to(self, device):
         self.actor = self.actor.to(device)
@@ -89,7 +86,7 @@ class SACAgent:
         )
 
     def process_act(self, act):
-        return np.squeeze(act.clamp(-self.max_act, self.max_act).cpu().numpy(), 0)
+        return np.squeeze(act.clamp(-1.0, 1.0).cpu().numpy(), 0)
 
 
 class SACDAgent(SACAgent):
@@ -143,7 +140,7 @@ def sac(
     **kwargs,
 ):
     """
-    Train `agent` on `env` with Soft Actor Critic algorithm.
+    Train `agent` on `train_env` with Soft Actor Critic algorithm, ane evaluate on `test_env`.
 
     Reference: https://arxiv.org/abs/1801.01290 and https://arxiv.org/abs/1812.05905
 
