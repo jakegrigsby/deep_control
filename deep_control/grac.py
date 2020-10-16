@@ -18,9 +18,11 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class GRACAgent(sac.SACAgent):
-    def __init__(self, obs_space_size, act_space_size, *args):
-        super().__init__(obs_space_size, act_space_size, None, None)
-        self.actor = nets.GracBaselineActor(obs_space_size, act_space_size)
+    def __init__(self, obs_space_size, act_space_size, log_std_low, log_std_high):
+        super().__init__(obs_space_size, act_space_size, log_std_low, log_std_high)
+        #self.actor = nets.GracBaselineActor(obs_space_size, act_space_size)
+        #self.actor = nets.GracSpinningActor(obs_space_size, act_space_size, log_std_low, log_std_high)
+        self.actor.dist_impl = 'simple'
         self.cem = critic_searchers.CEM(act_space_size, max_action=1.)
 
 def grac(
@@ -231,7 +233,6 @@ def learn(
             cem_action_value - agent_action_value, 
             torch.zeros_like(agent_action_value),
         ).detach()
-    
     actor_loss = -(agent_action_value + (1.0 / agent_actions.shape[1]) * agent_value_gap * logp_cema).mean()
     actor_optimizer.zero_grad()
     actor_loss.backward()

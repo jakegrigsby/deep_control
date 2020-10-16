@@ -19,8 +19,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class SACAgent:
     def __init__(self, obs_space_size, act_space_size, log_std_low, log_std_high):
-        self.actor = nets.StochasticBigActor(
-            obs_space_size, act_space_size, log_std_low, log_std_high
+        self.actor = nets.StochasticActor(
+            obs_space_size, act_space_size, log_std_low, log_std_high, dist_impl='pyd',
         )
         self.critic1 = nets.BigCritic(obs_space_size, act_space_size)
         self.critic2 = nets.BigCritic(obs_space_size, act_space_size)
@@ -75,6 +75,7 @@ class SACAgent:
         with torch.no_grad():
             act_dist = self.actor.forward(state)
             act = act_dist.sample()
+            if torch.isnan(act): breakpoint()
         self.actor.train()
         if from_cpu:
             act = self.process_act(act)
@@ -86,7 +87,7 @@ class SACAgent:
         )
 
     def process_act(self, act):
-        return np.squeeze(act.cpu().numpy(), 0)
+        return np.squeeze(act.clamp(-1., 1.).cpu().numpy(), 0)
 
 
 class SACDAgent(SACAgent):
