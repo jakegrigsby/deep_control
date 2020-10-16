@@ -104,8 +104,8 @@ class SimpleSquashedNormal:
         return torch.tanh(sample)
 
     def log_prob(self, action):
-        logp_a = self.dist.log_prob(action).sum(axis=-1)
-        logp_a -= (2 * (np.log(2) - action - F.softplus(-2 * action))).sum(axis=1)
+        logp_a = self.dist.log_prob(action)
+        logp_a -= (2 * (np.log(2) - action - F.softplus(-2 * action)))
         return logp_a
 
 
