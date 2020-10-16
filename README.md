@@ -53,7 +53,7 @@ Description: GRAC is a combination of a stochastic policy with TD3-like stabilit
 
 Code: `deep_control.grac`
 
-Othere References: [author's implementation](https://github.com/stanford-iprl-lab/GRAC)
+Other References: [author's implementation](https://github.com/stanford-iprl-lab/GRAC)
 
 #### Model Based Policy Optimization (MBPO)
 Paper: [When to Trust Your Model: Model-Based Policy Optimization](https://arxiv.org/abs/1906.08253), Janner et al., 2019.
@@ -78,6 +78,5 @@ see the `examples` folder for a look at how to train agents in environments like
 
 ### Roadmap
 Things that will hopefully be included by the end of 2020: 
-1) [GRAC](https://arxiv.org/abs/2009.08973)
-2) [CAQL](https://arxiv.org/abs/1909.12397)
-3) Quick setup support for [Robosuite](https://robosuite.ai) and [CARLA](https://carla.org).
+1) [CAQL](https://arxiv.org/abs/1909.12397)
+2) Quick setup support for [Robosuite](https://robosuite.ai) and [CARLA](https://carla.org).
