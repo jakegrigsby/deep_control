@@ -243,9 +243,9 @@ class SimpleModelEnsemble(nn.Module):
         return tuple([x[indxs] for x in transitions])
 
     def fit(self, transitions, *args, **kwargs):
-        transitions = self.sample_with_replacement(transitions)
         for model in self.ensemble:
-            model.fit(transitions, *args, **kwargs)
+            transitions_i = self.sample_with_replacement(transitions)
+            model.fit(transitions_i, *args, **kwargs)
 
 
 """
