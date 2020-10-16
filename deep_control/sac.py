@@ -75,7 +75,6 @@ class SACAgent:
         with torch.no_grad():
             act_dist = self.actor.forward(state)
             act = act_dist.sample()
-            if torch.isnan(act): breakpoint()
         self.actor.train()
         if from_cpu:
             act = self.process_act(act)

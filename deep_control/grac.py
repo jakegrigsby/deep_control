@@ -222,7 +222,7 @@ def learn(
 
     # actor update
     dist = agent.actor(state_batch)
-    agent_actions = dist.rsample()
+    agent_actions = dist.rsample().clamp(-1., 1.)
     agent_action_value = agent.critic1(state_batch, agent_actions)
 
     cem_actions = agent.cem.search(state_batch, agent_actions, agent.critic1)
