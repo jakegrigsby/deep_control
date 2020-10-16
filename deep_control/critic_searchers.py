@@ -7,7 +7,6 @@ import numpy as np
 This is code is from https://github.com/stanford-iprl-lab/GRAC/blob/master/ES.py
 """
 
-
 class _CEM:
     def __init__(
         self,
@@ -100,7 +99,6 @@ class _CEM:
         )
 
         self.elite = top_solutions[:, 0, :]
-        # self.elite_score = scores[:, idx_sorted[0]]
 
         return top_solutions[:, 0, :]
 
@@ -173,6 +171,5 @@ class CEM:
 
                     action_index = (best_Q < ori_Q).squeeze()
                     best_action[action_index] = action_init[action_index]
-                    # best_Q = torch.max(ori_Q, best_Q)
 
                     return best_action

@@ -258,44 +258,6 @@ class GracBaselineActor(nn.Module):
         return dist
 
 
-class GracSpinningActor(nn.Module):
-    class SimpleSquashed:
-        def __init__(self, normal_dist):
-            self.dist = normal_dist
-            self.mean = normal_dist.mean
-
-        def sample(self):
-            sample = self.dist.sample()
-            return torch.tanh(sample)
-
-        def rsample(self):
-            sample = self.dist.rsample()
-            return torch.tanh(sample)
-
-        def log_prob(self, action):
-            logp_a = self.dist.log_prob(action).sum(axis=-1)
-            logp_a -= (2 * (np.log(2) - action - F.softplus(-2 * action))).sum(axis=1)
-            return logp_a
-
-    def __init__(self, obs_size, action_size, log_std_low, log_std_high):
-        super().__init__()
-        self.fc1 = nn.Linear(obs_size, 400)
-        self.fc2 = nn.Linear(400, 300)
-        self.fc_mean = nn.Linear(300, action_size)
-        self.fc_std = nn.Linear(300, action_size)
-        self.log_std_low = log_std_low
-        self.log_std_high = log_std_high
-
-    def forward(self, state):
-        x = F.relu(self.fc1(state))
-        x = F.relu(self.fc2(x))
-        mean = self.fc_mean(x)
-        log_std = self.fc_std(x).clamp(self.log_std_low, self.log_std_high)
-        std = log_std.exp()
-        base_dist = pyd.Normal(mean, std)
-        return self.SimpleSquashed(base_dist)
-
-
 class BaselineDiscreteActor(nn.Module):
     def __init__(self, obs_shape, action_size):
         super().__init__()
