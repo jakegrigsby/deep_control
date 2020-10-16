@@ -20,10 +20,11 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class GRACAgent(sac.SACAgent):
     def __init__(self, obs_space_size, act_space_size, log_std_low, log_std_high):
         super().__init__(obs_space_size, act_space_size, log_std_low, log_std_high)
-        #self.actor = nets.GracBaselineActor(obs_space_size, act_space_size)
-        #self.actor = nets.GracSpinningActor(obs_space_size, act_space_size, log_std_low, log_std_high)
-        self.actor.dist_impl = 'simple'
-        self.cem = critic_searchers.CEM(act_space_size, max_action=1.)
+        # the standard pytorch_distributions implementation seems
+        # to be too numerically unstable for GRAC's low-prob CEM actions.
+        self.actor.dist_impl = "simple"
+        self.cem = critic_searchers.CEM(act_space_size, max_action=1.0)
+
 
 def grac(
     agent,
@@ -32,12 +33,13 @@ def grac(
     test_env,
     num_steps=1_000_000,
     transitions_per_step=1,
-    max_critic_updates_per_step=10,
-    critic_target_improvement=0.75,
+    max_critic_updates_per_step=20,
+    critic_target_improvement_init=0.7,
+    critic_target_improvement_final=0.9,
     gamma=0.99,
     batch_size=512,
-    actor_lr=3e-4,
-    critic_lr=3e-4,
+    actor_lr=1e-4,
+    critic_lr=1e-4,
     eval_interval=5000,
     eval_episodes=10,
     warmup_steps=1000,
@@ -54,6 +56,29 @@ def grac(
     save_to_disk=True,
     **kwargs,
 ):
+    """
+    Train `agent` on `train_env` using GRAC, and evaluate on `test_env`.
+
+    GRAC: Self-Guided and Self-Regularized Actor-Critic (https://sites.google.com/view/gracdrl)
+
+    GRAC is a combination of a stochastic policy with 
+    TD3-like stability improvements and CEM-based action selection
+    like you'd find in Qt-Opt or CAQL. 
+
+    This is a pretty faithful reimplementation of the authors' version
+    (https://github.com/stanford-iprl-lab/GRAC/blob/master/GRAC.py), with
+    a couple differences:
+
+    1) The default agent architecture and batch size are chosen for a fair
+        comparison with popular SAC settings (meaning they are larger). The
+        agent's action distribution is also implemented in a way that is more
+        like SAC (outputting log_std of a tanh squashed normal distribution)
+    2) Does not update the critic twice before the K/alpha loop begins,
+        which is a closer match to the paper's pseudocode. I'd guess the
+        original impl does this either for debugging or because the code was left
+        over from when it was copied from Fujimoto's TD3 implementation...
+    3) The agent never collects experience with actions selected by CEM.
+    """
     if save_to_disk or log_to_disk:
         save_dir = utils.make_process_dirs(name)
     if log_to_disk:
@@ -61,9 +86,19 @@ def grac(
         writer = tensorboardX.SummaryWriter(save_dir)
         writer.add_hparams(locals(), {})
 
+    # no target networks!
     agent.to(device)
     agent.cem.batch_size = batch_size
     agent.train()
+
+    # the critic target improvement ratio is annealed during training
+    critic_target_imp_slope = (
+        critic_target_improvement_final - critic_target_improvement_init
+    ) / num_steps
+    current_target_imp = lambda step: min(
+        critic_target_improvement_init + critic_target_imp_slope * step,
+        critic_target_improvement_final,
+    )
 
     # set up optimizers
     critic_optimizer = torch.optim.Adam(
@@ -104,12 +139,13 @@ def grac(
             steps_this_ep += 1
             if steps_this_ep >= max_episode_steps:
                 done = True
+
         learn(
             buffer=buffer,
             agent=agent,
             actor_optimizer=actor_optimizer,
             critic_optimizer=critic_optimizer,
-            critic_target_improvement=critic_target_improvement,
+            critic_target_improvement=current_target_imp(step),
             max_critic_updates_per_step=max_critic_updates_per_step,
             batch_size=batch_size,
             gamma=gamma,
@@ -161,11 +197,18 @@ def learn(
 
     agent.train()
 
+    ###################
+    ## CRITIC UPDATE ##
+    ###################
+
     with torch.no_grad():
+        # sample an action as normal
         action_dist_s1 = agent.actor(next_state_batch)
-        action_s1 = action_dist_s1.sample().clamp(-1., 1.)
+        action_s1 = action_dist_s1.sample().clamp(-1.0, 1.0)
+        # use CEM to find a higher value action
         cem_action_s1 = agent.cem.search(next_state_batch, action_s1, agent.critic2)
 
+        # clipped double q learning using both the agent and CEM actions
         clip_double_q_a1 = torch.min(
             agent.critic1(next_state_batch, action_s1),
             agent.critic2(next_state_batch, action_s1),
@@ -176,23 +219,29 @@ def learn(
             agent.critic2(next_state_batch, cem_action_s1),
         )
 
+        # best_action_s1 = argmax_a(clip_double_q_a1, clip_double_q_cema1)
         better_action_mask = (clip_double_q_cema1 >= clip_double_q_a1).squeeze(1)
         best_action_s1 = action_s1.clone()
         best_action_s1[better_action_mask] = cem_action_s1[better_action_mask]
+
+        # critic opinions of best actions that were found
         y_1 = agent.critic1(next_state_batch, best_action_s1)
         y_2 = agent.critic2(next_state_batch, best_action_s1)
 
+        # "max min double q learning"
         max_min_s1_value = torch.max(clip_double_q_a1, clip_double_q_cema1)
         td_target = reward_batch + gamma * (1.0 - done_batch) * max_min_s1_value
 
     # update critics
     critic_loss_initial = None
     for critic_update in range(max_critic_updates_per_step):
+        # standard bellman error
         a_critic1_pred = agent.critic1(state_batch, action_batch)
         a_critic2_pred = agent.critic2(state_batch, action_batch)
         td_error1 = td_target - a_critic1_pred
         td_error2 = td_target - a_critic2_pred
 
+        # constraints that discourage large changes in Q(s_{t+1}, a_{t+1}),
         a1_critic1_pred = agent.critic1(next_state_batch, best_action_s1)
         a1_critic2_pred = agent.critic2(next_state_batch, best_action_s1)
         a1_constraint1 = y_1 - a1_critic1_pred
@@ -206,7 +255,7 @@ def learn(
         )
         if per:
             elementwise_loss *= imp_weights
-        critic_loss = .5 * elementwise_critic_loss.mean()
+        critic_loss = 0.5 * elementwise_critic_loss.mean()
         critic_optimizer.zero_grad()
         critic_loss.backward()
         if critic_clip:
@@ -220,20 +269,31 @@ def learn(
         elif critic_loss <= critic_target_improvement * critic_loss_initial:
             break
 
-    # actor update
+    ##################
+    ## ACTOR UPDATE ##
+    ##################
+
+    # get agent's actions in this state
     dist = agent.actor(state_batch)
-    agent_actions = dist.rsample().clamp(-1., 1.)
+    agent_actions = dist.rsample().clamp(-1.0, 1.0)
     agent_action_value = agent.critic1(state_batch, agent_actions)
 
+    # find higher-value actions with CEM
     cem_actions = agent.cem.search(state_batch, agent_actions, agent.critic1)
     logp_cema = dist.log_prob(cem_actions).sum(-1, keepdim=True)
     cem_action_value = agent.critic1(state_batch, cem_actions)
 
-    agent_value_gap = torch.max(
-            cem_action_value - agent_action_value, 
-            torch.zeros_like(agent_action_value),
-        ).detach()
-    actor_loss = -(agent_action_value + (1.0 / agent_actions.shape[1]) * agent_value_gap * logp_cema).mean()
+    # how much better are the CEM actions than the agent's?
+    # clipped for rare cases where CEM actually finds a worse action...
+    cem_advantage = F.relu(cem_action_value - agent_action_value).detach()
+    # cem_adv_coeff = 1 / |A| ; best guess here is that this is meant
+    # to balance the \sum_{i}_{log\pi(cem_action)_{i}}, which can get large
+    # early in training when CEM tends to find very unlikely actions
+    cem_adv_coeff = 1.0 / agent_actions.shape[1]
+
+    actor_loss = -(
+        agent_action_value + cem_adv_coeff * cem_advantage * logp_cema
+    ).mean()
     actor_optimizer.zero_grad()
     actor_loss.backward()
     if actor_clip:
@@ -370,8 +430,14 @@ def add_args(parser):
         help="Upper bound for log std of action distribution.",
     )
     parser.add_argument(
-        "--critic_target_improvement",
+        "--critic_target_improvement_init",
         type=float,
-        default=0.75,
+        default=0.7,
+        help="Stop critic updates when loss drops by this factor. The GRAC paper calls this alpha",
+    )
+    parser.add_argument(
+        "--critic_target_improvement_final",
+        type=float,
+        default=0.9,
         help="Stop critic updates when loss drops by this factor. The GRAC paper calls this alpha",
     )

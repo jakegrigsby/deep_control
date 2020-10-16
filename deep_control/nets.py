@@ -89,6 +89,7 @@ class SmallPixelEncoder(nn.Module):
         state = self.fc(x)
         return state
 
+
 class SimpleSquashedNormal:
     def __init__(self, normal_dist):
         self.dist = normal_dist
@@ -104,12 +105,18 @@ class SimpleSquashedNormal:
 
     def log_prob(self, action):
         logp_a = self.dist.log_prob(action).sum(axis=-1)
-        logp_a -= (2*(np.log(2) - action - F.softplus(-2*action))).sum(axis=1)
+        logp_a -= (2 * (np.log(2) - action - F.softplus(-2 * action))).sum(axis=1)
         return logp_a
+
 
 class StochasticActor(nn.Module):
     def __init__(
-        self, state_space_size, act_space_size, log_std_low=-10, log_std_high=2, dist_impl='pyd'
+        self,
+        state_space_size,
+        act_space_size,
+        log_std_low=-10,
+        log_std_high=2,
+        dist_impl="pyd",
     ):
         super().__init__()
         self.fc1 = nn.Linear(state_space_size, 1024)
@@ -126,14 +133,14 @@ class StochasticActor(nn.Module):
         x = F.relu(self.fc2(x))
         out = self.fc3(x)
         mu, log_std = out.chunk(2, dim=1)
-        if self.dist_impl == 'pyd':
+        if self.dist_impl == "pyd":
             log_std = torch.tanh(log_std)
-            log_std = self.log_std_low + 0.5 * (self.log_std_high - self.log_std_low) * (
-                log_std + 1
-            )
+            log_std = self.log_std_low + 0.5 * (
+                self.log_std_high - self.log_std_low
+            ) * (log_std + 1)
             std = log_std.exp()
             dist = SquashedNormal(mu, std)
-        elif self.dist_impl == 'simple':
+        elif self.dist_impl == "simple":
             log_std = log_std.clamp(self.log_std_low, self.log_std_high)
             std = log_std.exp()
             base_dist = pyd.Normal(mu, std)
@@ -233,6 +240,7 @@ class SquashedNormal(pyd.transformed_distribution.TransformedDistribution):
             mu = tr(mu)
         return mu
 
+
 class GracBaselineActor(nn.Module):
     def __init__(self, obs_size, action_size):
         super().__init__()
@@ -249,8 +257,8 @@ class GracBaselineActor(nn.Module):
         dist = pyd.Normal(mean, std)
         return dist
 
-class GracSpinningActor(nn.Module):
 
+class GracSpinningActor(nn.Module):
     class SimpleSquashed:
         def __init__(self, normal_dist):
             self.dist = normal_dist
@@ -266,9 +274,9 @@ class GracSpinningActor(nn.Module):
 
         def log_prob(self, action):
             logp_a = self.dist.log_prob(action).sum(axis=-1)
-            logp_a -= (2*(np.log(2) - action - F.softplus(-2*action))).sum(axis=1)
+            logp_a -= (2 * (np.log(2) - action - F.softplus(-2 * action))).sum(axis=1)
             return logp_a
-        
+
     def __init__(self, obs_size, action_size, log_std_low, log_std_high):
         super().__init__()
         self.fc1 = nn.Linear(obs_size, 400)
@@ -286,8 +294,6 @@ class GracSpinningActor(nn.Module):
         std = log_std.exp()
         base_dist = pyd.Normal(mean, std)
         return self.SimpleSquashed(base_dist)
-
-
 
 
 class BaselineDiscreteActor(nn.Module):
