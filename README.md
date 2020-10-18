@@ -31,7 +31,8 @@ Other References: [author's implementation](https://github.com/sfujim/TD3)
 #### Soft Actor Critic (SAC)
 Paper: [Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor](https://arxiv.org/abs/1801.01290), Haarnoja et al., 2018.
 
-Description: Samples actions from a stochastic actor rather than relying on added exploration noise during training. Uses a TD3-like double critic system. We *do* implement the learnable entropy coefficient approach described in the [follow-up paper](https://arxiv.org/abs/1812.05905).
+Description: Samples actions from a stochastic actor rather than relying on added exploration noise during training. Uses a TD3-like double critic system. We *do* implement the learnable entropy coefficient approach described in the [follow-up paper](https://arxiv.org/abs/1812.05905). This version also **supports discrete action spaces** and can **avoid using target networks** by
+applying the self-regularized crticic updates from GRAC (see below).
 
 Code: `deep_control.sac`
 
@@ -47,7 +48,7 @@ Code: `deep_control.sac_aug`
 Other References: [SAC+AE code](https://github.com/denisyarats/pytorch_sac_ae), [RAD Procgen code](https://github.com/pokaxpoka/rad_procgen).
 
 #### Self-Guided and Self-Regularized Actor-Critic (GRAC)
-Paper: [GRAC: Self-Regularized Actor-Critic](https://arxiv.org/abs/2009.08973)
+Paper: [GRAC: Self-Regularized Actor-Critic](https://arxiv.org/abs/2009.08973), Shao et al., 2020.
 
 Description: GRAC is a combination of a stochastic policy with TD3-like stability improvements and CEM-based action selection like you'd see in Qt-Opt or CAQL.
 

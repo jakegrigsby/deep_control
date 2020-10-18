@@ -137,6 +137,10 @@ def sac(
     gradient_updates_per_step=1,
     init_alpha=0.1,
     discrete_actions=False,
+    self_regularized=False,
+    sr_max_critic_updates_per_step=20,
+    sr_critic_target_improvement_init=0.7,
+    sr_critic_target_improvement_final=0.9,
     **kwargs,
 ):
     """
@@ -144,8 +148,30 @@ def sac(
 
     Reference: https://arxiv.org/abs/1801.01290 and https://arxiv.org/abs/1812.05905
 
-    Also supports discrete action spaces (ref: https://arxiv.org/abs/1910.07207)
+    Also supports discrete action spaces (ref: https://arxiv.org/abs/1910.07207), 
+    and self-regularization (ref: https://arxiv.org/abs/2009.08973v1), which
+    eliminates the need for target networks and the tau hyperparameter.
     """
+    ######################
+    ## VALIDATE HPARAMS ##
+    ######################
+    assert not (self_regularized and discrete_actions)
+    assert not self_regularized or (
+        sr_critic_target_improvement_final >= sr_critic_target_improvement_init
+    )
+
+    if (not discrete_actions) and (not self_regularized):
+        learning_method = "Standard"
+    elif (discrete_actions) and (not self_regularized):
+        learning_method = "Discrete"
+    elif (not discrete_actions) and (self_regularized):
+        learning_method = "Self Regularized"
+
+    ################
+    ## PRINT INFO ##
+    ################
+    if verbosity:
+        print(f"Deep Control Soft Actor Critic with Learning Method: {learning_method}")
 
     if save_to_disk or log_to_disk:
         save_dir = utils.make_process_dirs(name)
@@ -154,16 +180,18 @@ def sac(
         writer = tensorboardX.SummaryWriter(save_dir)
         writer.add_hparams(locals(), {})
 
+    ###########
+    ## SETUP ##
+    ###########
     agent.to(device)
     agent.train()
-
-    # initialize target networks
-    target_agent = copy.deepcopy(agent)
-    target_agent.to(device)
-    utils.hard_update(target_agent.critic1, agent.critic1)
-    utils.hard_update(target_agent.critic2, agent.critic2)
-    target_agent.train()
-
+    if not self_regularized:
+        # initialize target networks
+        target_agent = copy.deepcopy(agent)
+        target_agent.to(device)
+        utils.hard_update(target_agent.critic1, agent.critic1)
+        utils.hard_update(target_agent.critic2, agent.critic2)
+        target_agent.train()
     # set up optimizers
     critic_optimizer = torch.optim.Adam(
         chain(agent.critic1.parameters(), agent.critic2.parameters(),),
@@ -177,29 +205,32 @@ def sac(
         weight_decay=actor_l2,
         betas=(0.9, 0.999),
     )
-
     log_alpha = torch.Tensor([math.log(init_alpha)]).to(device)
     log_alpha.requires_grad = True
     log_alpha_optimizer = torch.optim.Adam([log_alpha], lr=alpha_lr, betas=(0.5, 0.999))
-
     if not discrete_actions:
-        # continuous action learning
         target_entropy = -train_env.action_space.shape[0]
-        learn_fn = learn
     else:
-        # discrete action learning
         target_entropy = -math.log(1.0 / train_env.action_space.n) * 0.98
-        learn_fn = learn_discrete
+    if self_regularized:
+        # the critic target improvement ratio is annealed during training
+        critic_target_imp_slope = (
+            sr_critic_target_improvement_final - sr_critic_target_improvement_init
+        ) / num_steps
+        current_target_imp = lambda step: min(
+            sr_critic_target_improvement_init + critic_target_imp_slope * step,
+            sr_critic_target_improvement_final,
+        )
 
+    ###################
+    ## TRAINING LOOP ##
+    ###################
     # warmup the replay buffer with random actions
     run.warmup_buffer(buffer, train_env, warmup_steps, max_episode_steps)
-
     done = True
-
     steps_iter = range(num_steps)
     if verbosity:
         steps_iter = tqdm.tqdm(steps_iter)
-
     for step in steps_iter:
         # collect experience
         for _ in range(transitions_per_step):
@@ -219,28 +250,61 @@ def sac(
                 done = True
 
         for _ in range(gradient_updates_per_step):
-            learn_fn(
-                buffer=buffer,
-                target_agent=target_agent,
-                agent=agent,
-                actor_optimizer=actor_optimizer,
-                critic_optimizer=critic_optimizer,
-                log_alpha=log_alpha,
-                log_alpha_optimizer=log_alpha_optimizer,
-                target_entropy=target_entropy,
-                batch_size=batch_size,
-                gamma=gamma,
-                critic_clip=critic_clip,
-                actor_clip=actor_clip,
-                update_policy=step % actor_delay == 0,
-            )
+            if learning_method == "Standard":
+                learn_standard(
+                    buffer=buffer,
+                    target_agent=target_agent,
+                    agent=agent,
+                    actor_optimizer=actor_optimizer,
+                    critic_optimizer=critic_optimizer,
+                    log_alpha=log_alpha,
+                    log_alpha_optimizer=log_alpha_optimizer,
+                    target_entropy=target_entropy,
+                    batch_size=batch_size,
+                    gamma=gamma,
+                    critic_clip=critic_clip,
+                    actor_clip=actor_clip,
+                    update_policy=step % actor_delay == 0,
+                )
+            elif learning_method == "Discrete":
+                learn_discrete(
+                    buffer=buffer,
+                    target_agent=target_agent,
+                    agent=agent,
+                    actor_optimizer=actor_optimizer,
+                    critic_optimizer=critic_optimizer,
+                    log_alpha=log_alpha,
+                    log_alpha_optimizer=log_alpha_optimizer,
+                    target_entropy=target_entropy,
+                    batch_size=batch_size,
+                    gamma=gamma,
+                    critic_clip=critic_clip,
+                    actor_clip=actor_clip,
+                    update_policy=step % actor_delay == 0,
+                )
+            elif learning_method == "Self Regularized":
+                learn_self_regularized(
+                    buffer=buffer,
+                    agent=agent,
+                    actor_optimizer=actor_optimizer,
+                    critic_optimizer=critic_optimizer,
+                    log_alpha=log_alpha,
+                    log_alpha_optimizer=log_alpha_optimizer,
+                    target_entropy=target_entropy,
+                    critic_target_improvement=current_target_imp(step),
+                    max_critic_updates_per_step=sr_max_critic_updates_per_step,
+                    batch_size=batch_size,
+                    gamma=gamma,
+                    critic_clip=critic_clip,
+                    actor_clip=actor_clip,
+                )
 
             # move target model towards training model
-            if step % target_delay == 0:
+            if not self_regularized and (step % target_delay == 0):
                 utils.soft_update(target_agent.critic1, agent.critic1, tau)
                 utils.soft_update(target_agent.critic2, agent.critic2, tau)
 
-        if step % eval_interval == 0 or step == num_steps - 1:
+        if (step % eval_interval == 0) or (step == num_steps - 1):
             mean_return = run.evaluate_agent(
                 agent, test_env, eval_episodes, max_episode_steps, render
             )
@@ -255,7 +319,7 @@ def sac(
     return agent
 
 
-def learn(
+def learn_standard(
     buffer,
     target_agent,
     agent,
@@ -286,7 +350,9 @@ def learn(
     done_batch = done_batch.to(device)
 
     agent.train()
-
+    ###################
+    ## CRITIC UPDATE ##
+    ###################
     alpha = torch.exp(log_alpha)
     with torch.no_grad():
         action_dist_s1 = agent.actor(next_state_batch)
@@ -302,18 +368,13 @@ def learn(
 
     # update critics
     agent_critic1_pred = agent.critic1(state_batch, action_batch)
-    td_error1 = td_target - agent_critic1_pred
-    if per:
-        critic1_loss = (imp_weights * 0.5 * (td_error1 ** 2)).mean()
-    else:
-        critic1_loss = 0.5 * (td_error1 ** 2).mean()
     agent_critic2_pred = agent.critic2(state_batch, action_batch)
+    td_error1 = td_target - agent_critic1_pred
     td_error2 = td_target - agent_critic2_pred
+    critic_loss = 0.5 * (td_error1 ** 2 + td_error2 ** 2)
     if per:
-        critic2_loss = (imp_weights * 0.5 * (td_error2 ** 2)).mean()
-    else:
-        critic2_loss = 0.5 * (td_error2 ** 2).mean()
-    critic_loss = critic1_loss + critic2_loss
+        critic_loss *= imp_weights
+    critic_loss = critic_loss.mean()
     critic_optimizer.zero_grad()
     critic_loss.backward()
     if critic_clip:
@@ -323,7 +384,9 @@ def learn(
     critic_optimizer.step()
 
     if update_policy:
-        # actor update
+        ##################
+        ## ACTOR UPDATE ##
+        ##################
         dist = agent.actor(state_batch)
         agent_actions = dist.rsample()
         logp_a = dist.log_prob(agent_actions).sum(-1, keepdim=True)
@@ -340,7 +403,125 @@ def learn(
             torch.nn.utils.clip_grad_norm_(agent.actor.parameters(), actor_clip)
         actor_optimizer.step()
 
-        # alpha update
+        ##################
+        ## ALPHA UPDATE ##
+        ##################
+        alpha_loss = (-alpha * (logp_a + target_entropy).detach()).mean()
+        log_alpha_optimizer.zero_grad()
+        alpha_loss.backward()
+        log_alpha_optimizer.step()
+
+    if per:
+        new_priorities = (abs(td_error1) + 1e-5).cpu().detach().squeeze(1).numpy()
+        buffer.update_priorities(priority_idxs, new_priorities)
+
+
+def learn_self_regularized(
+    buffer,
+    agent,
+    actor_optimizer,
+    critic_optimizer,
+    log_alpha_optimizer,
+    target_entropy,
+    critic_target_improvement,
+    max_critic_updates_per_step,
+    batch_size,
+    log_alpha,
+    gamma,
+    critic_clip,
+    actor_clip,
+    update_policy=True,
+):
+    per = isinstance(buffer, replay.PrioritizedReplayBuffer)
+    if per:
+        batch, imp_weights, priority_idxs = buffer.sample(batch_size)
+        imp_weights = imp_weights.to(device)
+    else:
+        batch = buffer.sample(batch_size)
+
+    # prepare transitions for models
+    state_batch, action_batch, reward_batch, next_state_batch, done_batch = batch
+    state_batch = state_batch.to(device)
+    next_state_batch = next_state_batch.to(device)
+    action_batch = action_batch.to(device)
+    reward_batch = reward_batch.to(device)
+    done_batch = done_batch.to(device)
+
+    agent.train()
+
+    ###################
+    ## CRITIC UPDATE ##
+    ###################
+    alpha = torch.exp(log_alpha)
+    with torch.no_grad():
+        action_dist_s1 = agent.actor(next_state_batch)
+        action_s1 = action_dist_s1.rsample()
+        logp_a1 = action_dist_s1.log_prob(action_s1).sum(-1, keepdim=True)
+        y1 = agent.critic1(next_state_batch, action_s1)
+        y2 = agent.critic2(next_state_batch, action_s1)
+        clipped_double_q_s1 = torch.min(y1, y2)
+        td_target = reward_batch + gamma * (1.0 - done_batch) * (
+            clipped_double_q_s1 - (alpha * logp_a1)
+        )
+
+    critic_loss_initial = None
+    for critic_update in range(max_critic_updates_per_step):
+        # standard bellman error
+        a_critic1_pred = agent.critic1(state_batch, action_batch)
+        a_critic2_pred = agent.critic2(state_batch, action_batch)
+        td_error1 = td_target - a_critic1_pred
+        td_error2 = td_target - a_critic2_pred
+
+        # constraints that discourage large changes in Q(s_{t+1}, a_{t+1}),
+        a1_critic1_pred = agent.critic1(next_state_batch, action_s1)
+        a1_critic2_pred = agent.critic2(next_state_batch, action_s1)
+        a1_constraint1 = y1 - a1_critic1_pred
+        a1_constraint2 = y2 - a1_critic2_pred
+
+        elementwise_critic_loss = (
+            (td_error1 ** 2)
+            + (td_error2 ** 2)
+            + (a1_constraint1 ** 2)
+            + (a1_constraint2 ** 2)
+        )
+        if per:
+            elementwise_loss *= imp_weights
+        critic_loss = 0.5 * elementwise_critic_loss.mean()
+        critic_optimizer.zero_grad()
+        critic_loss.backward()
+        if critic_clip:
+            torch.nn.utils.clip_grad_norm_(
+                chain(agent.critic1.parameters(), agent.critic2.parameters()),
+                critic_clip,
+            )
+        critic_optimizer.step()
+        if critic_update == 0:
+            critic_loss_initial = critic_loss
+        elif critic_loss <= critic_target_improvement * critic_loss_initial:
+            break
+
+    if update_policy:
+        ##################
+        ## ACTOR UPDATE ##
+        ##################
+        dist = agent.actor(state_batch)
+        agent_actions = dist.rsample()
+        logp_a = dist.log_prob(agent_actions).sum(-1, keepdim=True)
+        actor_loss = -(
+            torch.min(
+                agent.critic1(state_batch, agent_actions),
+                agent.critic2(state_batch, agent_actions),
+            )
+            - (alpha.detach() * logp_a)
+        ).mean()
+        actor_optimizer.zero_grad()
+        actor_loss.backward()
+        if actor_clip:
+            torch.nn.utils.clip_grad_norm_(agent.actor.parameters(), actor_clip)
+        actor_optimizer.step()
+        ##################
+        ## ALPHA UPDATE ##
+        ##################
         alpha_loss = (-alpha * (logp_a + target_entropy).detach()).mean()
         log_alpha_optimizer.zero_grad()
         alpha_loss.backward()
@@ -382,7 +563,9 @@ def learn_discrete(
     done_batch = done_batch.to(device)
 
     agent.train()
-
+    ###################
+    ## CRITIC UPDATE ##
+    ###################
     alpha = torch.exp(log_alpha)
     with torch.no_grad():
         # create critic targets (clipped double Q learning)
@@ -403,18 +586,13 @@ def learn_discrete(
 
     # update critics
     agent_critic1_pred = agent.critic1(state_batch).gather(1, action_batch.long())
-    td_error1 = td_target - agent_critic1_pred
-    if per:
-        critic1_loss = (imp_weights * 0.5 * (td_error1 ** 2)).mean()
-    else:
-        critic1_loss = 0.5 * (td_error1 ** 2).mean()
     agent_critic2_pred = agent.critic2(state_batch).gather(1, action_batch.long())
+    td_error1 = td_target - agent_critic1_pred
     td_error2 = td_target - agent_critic2_pred
+    critic_loss = (td_error1 ** 2) + (td_error2 ** 2)
     if per:
-        critic2_loss = (imp_weights * 0.5 * (td_error2 ** 2)).mean()
-    else:
-        critic2_loss = 0.5 * (td_error2 ** 2).mean()
-    critic_loss = critic1_loss + critic2_loss
+        critic_loss *= imp_weights
+    critic_loss = 0.5 * critic_loss.mean()
     critic_optimizer.zero_grad()
     critic_loss.backward()
     if critic_clip:
@@ -424,7 +602,9 @@ def learn_discrete(
     critic_optimizer.step()
 
     if update_policy:
-        # actor update
+        ##################
+        ## ACTOR UPDATE ##
+        ##################
         agent_action_dist = agent.actor(state_batch)
         agent_actions = agent_action_dist.sample()
         logp_a = agent_action_dist.log_prob(agent_actions).unsqueeze(1)
@@ -445,7 +625,9 @@ def learn_discrete(
             torch.nn.utils.clip_grad_norm_(agent.actor.parameters(), actor_clip)
         actor_optimizer.step()
 
-        # alpha update
+        ##################
+        ## ALPHA UPDATE ##
+        ##################
         alpha_loss = torch.sum(
             logp_a.exp().detach() * (-alpha * (logp_a.detach() + target_entropy)),
             dim=-1,
@@ -462,7 +644,7 @@ def learn_discrete(
 
 def add_args(parser):
     parser.add_argument(
-        "--num_steps", type=int, default=10 ** 6, help="number of steps in training"
+        "--num_steps", type=int, default=10 ** 6, help="Number of steps in training"
     )
     parser.add_argument(
         "--transitions_per_step",
@@ -615,4 +797,27 @@ def add_args(parser):
         type=float,
         default=2,
         help="Upper bound for log std of action distribution.",
+    )
+    parser.add_argument(
+        "--self_regularized",
+        action="store_true",
+        help="Self Regularization (no target networks!), as in GRAC",
+    )
+    parser.add_argument(
+        "--sr_max_critic_updates_per_step",
+        type=int,
+        default=10,
+        help="Max critic updates to make per step. The GRAC paper calls this K",
+    )
+    parser.add_argument(
+        "--sr_critic_target_improvement_init",
+        type=float,
+        default=0.7,
+        help="Stop critic updates when loss drops by this factor. The GRAC paper calls this alpha",
+    )
+    parser.add_argument(
+        "--sr_critic_target_improvement_final",
+        type=float,
+        default=0.9,
+        help="Stop critic updates when loss drops by this factor. The GRAC paper calls this alpha",
     )

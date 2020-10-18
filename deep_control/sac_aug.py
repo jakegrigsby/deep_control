@@ -20,9 +20,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class PixelSACAgent(sac.SACAgent):
     def __init__(self, obs_shape, act_space_size, log_std_low, log_std_high):
         self.encoder = nets.BigPixelEncoder(obs_shape, out_dim=50)
-        self.actor = nets.StochasticActor(
-            50, act_space_size, log_std_low, log_std_high
-        )
+        self.actor = nets.StochasticActor(50, act_space_size, log_std_low, log_std_high)
         self.critic1 = nets.BigCritic(50, act_space_size)
         self.critic2 = nets.BigCritic(50, act_space_size)
         self.log_std_low = log_std_low
