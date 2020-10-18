@@ -148,7 +148,9 @@ def sac(
 
     Reference: https://arxiv.org/abs/1801.01290 and https://arxiv.org/abs/1812.05905
 
-    Also supports discrete action spaces (ref: https://arxiv.org/abs/1910.07207)
+    Also supports discrete action spaces (ref: https://arxiv.org/abs/1910.07207), 
+    and self-regularization (ref: https://arxiv.org/abs/2009.08973v1), which
+    eliminates the need for target networks and the tau hyperparameter.
     """
     ######################
     ## VALIDATE HPARAMS ##
@@ -348,7 +350,9 @@ def learn_standard(
     done_batch = done_batch.to(device)
 
     agent.train()
-
+    ###################
+    ## CRITIC UPDATE ##
+    ###################
     alpha = torch.exp(log_alpha)
     with torch.no_grad():
         action_dist_s1 = agent.actor(next_state_batch)
@@ -364,18 +368,13 @@ def learn_standard(
 
     # update critics
     agent_critic1_pred = agent.critic1(state_batch, action_batch)
-    td_error1 = td_target - agent_critic1_pred
-    if per:
-        critic1_loss = (imp_weights * 0.5 * (td_error1 ** 2)).mean()
-    else:
-        critic1_loss = 0.5 * (td_error1 ** 2).mean()
     agent_critic2_pred = agent.critic2(state_batch, action_batch)
+    td_error1 = td_target - agent_critic1_pred
     td_error2 = td_target - agent_critic2_pred
+    critic_loss = 0.5 * (td_error1 ** 2 + td_error2 ** 2)
     if per:
-        critic2_loss = (imp_weights * 0.5 * (td_error2 ** 2)).mean()
-    else:
-        critic2_loss = 0.5 * (td_error2 ** 2).mean()
-    critic_loss = critic1_loss + critic2_loss
+        critic_loss *= imp_weights
+    critic_loss = critic_loss.mean()
     critic_optimizer.zero_grad()
     critic_loss.backward()
     if critic_clip:
@@ -385,7 +384,9 @@ def learn_standard(
     critic_optimizer.step()
 
     if update_policy:
-        # actor update
+        ##################
+        ## ACTOR UPDATE ##
+        ##################
         dist = agent.actor(state_batch)
         agent_actions = dist.rsample()
         logp_a = dist.log_prob(agent_actions).sum(-1, keepdim=True)
@@ -402,7 +403,9 @@ def learn_standard(
             torch.nn.utils.clip_grad_norm_(agent.actor.parameters(), actor_clip)
         actor_optimizer.step()
 
-        # alpha update
+        ##################
+        ## ALPHA UPDATE ##
+        ##################
         alpha_loss = (-alpha * (logp_a + target_entropy).detach()).mean()
         log_alpha_optimizer.zero_grad()
         alpha_loss.backward()
@@ -449,7 +452,6 @@ def learn_self_regularized(
     ###################
     ## CRITIC UPDATE ##
     ###################
-
     alpha = torch.exp(log_alpha)
     with torch.no_grad():
         action_dist_s1 = agent.actor(next_state_batch)
@@ -561,7 +563,9 @@ def learn_discrete(
     done_batch = done_batch.to(device)
 
     agent.train()
-
+    ###################
+    ## CRITIC UPDATE ##
+    ###################
     alpha = torch.exp(log_alpha)
     with torch.no_grad():
         # create critic targets (clipped double Q learning)
@@ -582,18 +586,13 @@ def learn_discrete(
 
     # update critics
     agent_critic1_pred = agent.critic1(state_batch).gather(1, action_batch.long())
-    td_error1 = td_target - agent_critic1_pred
-    if per:
-        critic1_loss = (imp_weights * 0.5 * (td_error1 ** 2)).mean()
-    else:
-        critic1_loss = 0.5 * (td_error1 ** 2).mean()
     agent_critic2_pred = agent.critic2(state_batch).gather(1, action_batch.long())
+    td_error1 = td_target - agent_critic1_pred
     td_error2 = td_target - agent_critic2_pred
+    critic_loss = (td_error1 ** 2) + (td_error2 ** 2)
     if per:
-        critic2_loss = (imp_weights * 0.5 * (td_error2 ** 2)).mean()
-    else:
-        critic2_loss = 0.5 * (td_error2 ** 2).mean()
-    critic_loss = critic1_loss + critic2_loss
+        critic_loss *= imp_weights
+    critic_loss = 0.5 * critic_loss.mean()
     critic_optimizer.zero_grad()
     critic_loss.backward()
     if critic_clip:
@@ -603,7 +602,9 @@ def learn_discrete(
     critic_optimizer.step()
 
     if update_policy:
-        # actor update
+        ##################
+        ## ACTOR UPDATE ##
+        ##################
         agent_action_dist = agent.actor(state_batch)
         agent_actions = agent_action_dist.sample()
         logp_a = agent_action_dist.log_prob(agent_actions).unsqueeze(1)
@@ -624,7 +625,9 @@ def learn_discrete(
             torch.nn.utils.clip_grad_norm_(agent.actor.parameters(), actor_clip)
         actor_optimizer.step()
 
-        # alpha update
+        ##################
+        ## ALPHA UPDATE ##
+        ##################
         alpha_loss = torch.sum(
             logp_a.exp().detach() * (-alpha * (logp_a.detach() + target_entropy)),
             dim=-1,
@@ -641,7 +644,7 @@ def learn_discrete(
 
 def add_args(parser):
     parser.add_argument(
-        "--num_steps", type=int, default=10 ** 6, help="number of steps in training"
+        "--num_steps", type=int, default=10 ** 6, help="Number of steps in training"
     )
     parser.add_argument(
         "--transitions_per_step",

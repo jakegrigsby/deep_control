@@ -105,8 +105,8 @@ class SimpleSquashedNormal:
 
     def log_prob(self, action):
         logp_a = self.dist.log_prob(action)
-        logp_a -= (2 * (np.log(2) - action - F.softplus(-2 * action)))
-        return logp_a
+        logp_a -= 2 * (np.log(2) - action - F.softplus(-2 * action))
+        return logp_a.clamp(-10.0, 10.0)
 
 
 class StochasticActor(nn.Module):
