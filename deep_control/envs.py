@@ -118,7 +118,7 @@ def add_gym_args(parser):
     parser.add_argument("--seed", type=int, default=231)
 
 
-def load_gym(env_id="CartPole-v1", seed=None, **_):
+def load_gym(env_id="CartPole-v1", seed=None, normalize_action_space=True, **_):
     """
     Load an environment from OpenAI gym (or pybullet_gym, if installed)
     """
@@ -129,7 +129,8 @@ def load_gym(env_id="CartPole-v1", seed=None, **_):
     except ImportError:
         pass
     env = gym.make(env_id)
-    env = NormalizeContinuousActionSpace(env)
+    if normalize_action_space and isinstance(env.action_space, gym.spaces.Box):
+        env = NormalizeContinuousActionSpace(env)
     if seed is None:
         seed = random.randint(1, 100000)
     env.seed(seed)
