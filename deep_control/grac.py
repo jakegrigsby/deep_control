@@ -54,6 +54,7 @@ def grac(
     actor_l2=0.0,
     log_to_disk=True,
     save_to_disk=True,
+    infinite_bootstrap=True,
     **kwargs,
 ):
     """
@@ -73,11 +74,7 @@ def grac(
         comparison with popular SAC settings (meaning they are larger). The
         agent's action distribution is also implemented in a way that is more
         like SAC (outputting log_std of a tanh squashed normal distribution)
-    2) Does not update the critic twice before the K/alpha loop begins,
-        which is a closer match to the paper's pseudocode. I'd guess the
-        original impl does this either for debugging or because the code was left
-        over from when it was copied from Fujimoto's TD3 implementation...
-    3) The agent never collects experience with actions selected by CEM.
+    2) The agent never collects experience with actions selected by CEM.
     """
     if save_to_disk or log_to_disk:
         save_dir = utils.make_process_dirs(name)
@@ -131,9 +128,10 @@ def grac(
                 done = False
             action = agent.sample_action(state)
             next_state, reward, done, info = train_env.step(action)
-            # allow infinite bootstrapping
-            if steps_this_ep + 1 == max_episode_steps:
-                done = False
+            if infinite_bootstrap:
+                # allow infinite bootstrapping
+                if steps_this_ep + 1 == max_episode_steps:
+                    done = False
             buffer.push(state, action, reward, next_state, done)
             state = next_state
             steps_this_ep += 1

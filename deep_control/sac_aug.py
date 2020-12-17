@@ -112,6 +112,7 @@ def sac_aug(
     init_alpha=0.1,
     feature_matching_imp=0.0,
     aug_mix=1.0,
+    infinite_bootstrap=True,
     **kwargs,
 ):
     if save_to_disk or log_to_disk:
@@ -177,8 +178,8 @@ def sac_aug(
             # batch the actions
             action = agent.sample_action(obs)
             next_obs, reward, done, info = train_env.step(action)
-            # allow infinite bootstrapping
-            if steps_this_ep + 1 == max_episode_steps:
+            if infinite_bootstrap and steps_this_ep + 1 == max_episode_steps:
+                # allow infinite bootstrapping
                 done = False
             buffer.push(obs, action, reward, next_obs, done)
             obs = next_obs

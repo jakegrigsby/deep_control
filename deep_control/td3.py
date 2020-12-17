@@ -106,6 +106,7 @@ def td3(
     gradient_updates_per_step=1,
     td_reg_coeff=0.0,
     td_reg_coeff_decay=0.9999,
+    infinite_bootstrap=True,
     **_,
 ):
     """
@@ -167,6 +168,10 @@ def td3(
             action = agent.forward(state)
             noisy_action = run.exploration_noise(action, random_process)
             next_state, reward, done, info = train_env.step(noisy_action)
+            if infinite_bootstrap:
+                # allow infinite bootstrapping
+                if steps_this_ep + 1 == max_episode_steps:
+                    done = False
             buffer.push(state, noisy_action, reward, next_state, done)
             state = next_state
             steps_this_ep += 1

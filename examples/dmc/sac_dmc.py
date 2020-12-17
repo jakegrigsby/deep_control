@@ -11,7 +11,9 @@ def train_dmc_sac(args):
     action_shape = train_env.action_space.shape
     max_action = train_env.action_space.high[0]
 
-    agent = dc.sac.SACAgent(obs_shape[0], action_shape[0], args.log_std_low, args.log_std_high)
+    agent = dc.sac.SACAgent(
+        obs_shape[0], action_shape[0], args.log_std_low, args.log_std_high
+    )
 
     # select a replay buffer
     if args.prioritized_replay:

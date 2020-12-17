@@ -141,6 +141,7 @@ def sac(
     sr_max_critic_updates_per_step=20,
     sr_critic_target_improvement_init=0.7,
     sr_critic_target_improvement_final=0.9,
+    infinite_bootstrap=True,
     **kwargs,
 ):
     """
@@ -240,9 +241,10 @@ def sac(
                 done = False
             action = agent.sample_action(state)
             next_state, reward, done, info = train_env.step(action)
-            # allow infinite bootstrapping
-            if steps_this_ep + 1 == max_episode_steps:
-                done = False
+            if infinite_bootstrap:
+                # allow infinite bootstrapping
+                if steps_this_ep + 1 == max_episode_steps:
+                    done = False
             buffer.push(state, action, reward, next_state, done)
             state = next_state
             steps_this_ep += 1

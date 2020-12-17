@@ -85,6 +85,7 @@ def mbpo(
     model_batch_size=256,
     model_max_epochs=100,
     model_l2=0.0001,
+    infinite_bootstrap=True,
     **_,
 ):
     """
@@ -181,8 +182,8 @@ def mbpo(
             env_done = False
         action = agent.sample_action(env_state, from_cpu=True)
         env_next_state, env_reward, env_done, info = train_env.step(action)
-        # allow infinite bootstrapping
-        if env_steps_this_ep + 1 == max_episode_steps:
+        if infinite_bootstrap and env_steps_this_ep + 1 == max_episode_steps:
+            # allow infinite bootstrapping
             env_done = False
         model_buffer.push(env_state, action, env_reward, env_next_state, env_done)
         env_state = env_next_state

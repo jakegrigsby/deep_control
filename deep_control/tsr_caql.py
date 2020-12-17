@@ -18,6 +18,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 TSR_CAQLAgent = grac.GRACAgent
 
+
 def tsr_caql(
     agent,
     buffer,
@@ -47,6 +48,7 @@ def tsr_caql(
     log_to_disk=True,
     save_to_disk=True,
     debug_logs=False,
+    infinite_bootstrap=True,
     **kwargs,
 ):
     if save_to_disk or log_to_disk:
@@ -101,8 +103,8 @@ def tsr_caql(
                 done = False
             action = agent.sample_action(state)
             next_state, reward, done, info = train_env.step(action)
-            # allow infinite bootstrapping
-            if steps_this_ep + 1 == max_episode_steps:
+            if infinite_bootstrap and (steps_this_ep + 1 == max_episode_steps):
+                # allow infinite bootstrapping
                 done = False
             buffer.push(state, action, reward, next_state, done)
             state = next_state

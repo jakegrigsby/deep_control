@@ -16,7 +16,7 @@ def train_dmc_sac_aug(args):
     augmenter = dc.augmentations.AugmentationSequence(augmentation_lst)
 
     agent = dc.sac_aug.PixelSACAgent(
-        obs_shape, action_shape[0], max_action, args.log_std_low, args.log_std_high
+        obs_shape, action_shape[0], args.log_std_low, args.log_std_high
     )
 
     # select a replay buffer
