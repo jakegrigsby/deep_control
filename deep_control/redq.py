@@ -130,7 +130,19 @@ def redq(
     infinite_bootstrap=True,
     **kwargs,
 ):
+    """
+    "Randomized Ensembled Dobule Q-Learning: Learning Fast Without a Model", Chen et al., 2020
 
+    REDQ is an extension of the clipped double Q learning trick. To create the
+    target value, we sample M critic networks from an ensemble of size N. This
+    reduces the overestimation bias of the critics, and also allows us to use
+    much higher replay ratios (actor_updates_per_step or critic_updates_per_step 
+    >> transitions_per_step). This makes REDQ very sample efficient, but really
+    hurts wall clock time relative to SAC/TD3. REDQ's sample efficiency makes 
+    MBPO a more fair comparison, in which case it would be considered fast.
+    REDQ can be applied to just about any actor-critic algorithm; we implement 
+    it on SAC here.
+    """
     assert len(agent.critics) >= random_ensemble_size
 
     if save_to_disk or log_to_disk:
@@ -188,16 +200,16 @@ def redq(
                 done = False
             action = agent.sample_action(state)
             next_state, reward, done, info = train_env.step(action)
-            if infinite_bootstrap:
+            if infinite_bootstrap and steps_this_ep + 1 == max_episode_steps:
                 # allow infinite bootstrapping
-                if steps_this_ep + 1 == max_episode_steps:
-                    done = False
+                done = False
             buffer.push(state, action, reward, next_state, done)
             state = next_state
             steps_this_ep += 1
             if steps_this_ep >= max_episode_steps:
                 done = True
 
+        # critic update
         for _ in range(critic_updates_per_step):
             learn_critics(
                 buffer=buffer,
@@ -211,6 +223,7 @@ def redq(
                 random_ensemble_size=random_ensemble_size,
             )
 
+        # actor update
         for _ in range(actor_updates_per_step):
             learn_actor(
                 buffer=buffer,

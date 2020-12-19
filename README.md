@@ -67,6 +67,11 @@ Code: `deep_control.mbpo`
 
 Other References: [author's implementation](https://github.com/JannerM/mbpo).
 
+#### Randomized Ensemble Double Q-Learning (REDQ)
+Paper: [Randomized Ensemble Double Q-Learning: Learning Fast Without a Model](https://openreview.net/forum?id=AY8zfZm0tDd)
+
+Description: Extends the double Q trick to random subsets of a larger critic ensemble. Reduced Q function bias allows for a much higher replay ratio. REDQ is sample efficient but slow (compared to other model-free methods). We implement the SAC version.
+
 ### Installation
 ```bash
 git clone https://github.com/jakegrigsby/deep_control.git
