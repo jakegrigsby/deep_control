@@ -254,6 +254,8 @@ def discor(
         if step % target_delay == 0:
             utils.soft_update(target_agent.critic1, agent.critic1, tau)
             utils.soft_update(target_agent.critic2, agent.critic2, tau)
+            utils.soft_update(target_agent.delta1, agent.delta1, tau)
+            utils.soft_update(target_agent.delta2, agent.delta2, tau)
 
         if (step % eval_interval == 0) or (step == num_steps - 1):
             mean_return = run.evaluate_agent(
@@ -320,12 +322,20 @@ def learn_discor(
         target_delta1_s1 = target_agent.delta1(next_state_batch, action_s1)
         target_delta2_s1 = target_agent.delta2(next_state_batch, action_s1)
         disCor_weights1 = torch.softmax(
-            -((1.0 - done_batch) * gamma * agent.delta1(next_state_batch, action_s1))
+            -(
+                (1.0 - done_batch)
+                * gamma
+                * target_agent.delta1(next_state_batch, action_s1)
+            )
             / temp1,
             dim=0,
         )
         disCor_weights2 = torch.softmax(
-            -((1.0 - done_batch) * gamma * agent.delta2(next_state_batch, action_s1))
+            -(
+                (1.0 - done_batch)
+                * gamma
+                * target_agent.delta2(next_state_batch, action_s1)
+            )
             / temp2,
             dim=0,
         )
