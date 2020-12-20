@@ -72,6 +72,15 @@ Paper: [Randomized Ensemble Double Q-Learning: Learning Fast Without a Model](ht
 
 Description: Extends the double Q trick to random subsets of a larger critic ensemble. Reduced Q function bias allows for a much higher replay ratio. REDQ is sample efficient but slow (compared to other model-free methods). We implement the SAC version.
 
+Code: `deep_control.redq`
+
+#### Distributional Correction (DisCor)
+Paper: [DisCor: Corrective Feedback in Reinforcement Learning via Distribution Correction](https://arxiv.org/abs/2003.07305), Kumar et al., 2020.
+
+Description: Reduce the effect of inaccurate target values propagating through the Q-function by learning to estimate the target networks' inaccuracies and adjusting the TD error accordingly. Implemented on top of standard SAC.
+
+Code: `deep_control.discor`
+
 ### Installation
 ```bash
 git clone https://github.com/jakegrigsby/deep_control.git

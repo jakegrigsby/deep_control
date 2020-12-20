@@ -26,6 +26,7 @@ class DisCorAgent:
         log_std_high,
         actor_net=nets.StochasticActor,
         critic_net=nets.BigCritic,
+        delta_net=nets.BigCritic,
     ):
         self.actor = actor_net(
             obs_space_size, act_space_size, log_std_low, log_std_high, dist_impl="pyd",
@@ -33,8 +34,11 @@ class DisCorAgent:
         self.critic1 = critic_net(obs_space_size, act_space_size)
         self.critic2 = critic_net(obs_space_size, act_space_size)
 
-        self.delta1 = critic_net(obs_space_size, act_space_size)
-        self.delta2 = critic_net(obs_space_size, act_space_size)
+        # delta networks are similar to critic networks but learn
+        # the error between the critic and the target in a given (s, a).
+        # the paper suggests using a slightly larger Q network for the deltas.
+        self.delta1 = delta_net(obs_space_size, act_space_size)
+        self.delta2 = delta_net(obs_space_size, act_space_size)
 
     def to(self, device):
         self.actor = self.actor.to(device)
@@ -124,10 +128,10 @@ def discor(
     max_episode_steps=100_000,
     batch_size=512,
     tau=0.005,
-    actor_lr=1e-4,
-    critic_lr=1e-4,
+    actor_lr=3e-4,
+    critic_lr=3e-4,
     alpha_lr=1e-4,
-    delta_lr=1e-4,
+    delta_lr=3e-4,
     gamma=0.99,
     eval_interval=5000,
     eval_episodes=10,
@@ -152,11 +156,21 @@ def discor(
     infinite_bootstrap=True,
     **kwargs,
 ):
+    """
+    "DisCor: Corrective Feedback in Reinforcement Learning via
+    Distribution Correction", Kumar et al., 2020.
 
+    Reference: https://arxiv.org/abs/2003.07305
+
+    Reduce the effect of inaccurate target values propagating
+    through the Q-function by learning to estimate the target
+    networks' inaccuracies and adjusting the TD error accordingly.
+
+    Compare with: SAC
+    """
     if save_to_disk or log_to_disk:
         save_dir = utils.make_process_dirs(name)
     if log_to_disk:
-        # create tb writer, save hparams
         writer = tensorboardX.SummaryWriter(save_dir)
         writer.add_hparams(locals(), {})
 
@@ -165,16 +179,15 @@ def discor(
     ###########
     agent.to(device)
     agent.train()
-    # initialize target networks
     target_agent = copy.deepcopy(agent)
     target_agent.to(device)
     utils.hard_update(target_agent.critic1, agent.critic1)
     utils.hard_update(target_agent.critic2, agent.critic2)
+    # update new delta networks
     utils.hard_update(target_agent.delta1, agent.delta1)
     utils.hard_update(target_agent.delta2, agent.delta2)
     target_agent.train()
 
-    # set up optimizers
     critic_optimizer = torch.optim.Adam(
         chain(agent.critic1.parameters(), agent.critic2.parameters(),),
         lr=critic_lr,
@@ -187,6 +200,7 @@ def discor(
         weight_decay=actor_l2,
         betas=(0.9, 0.999),
     )
+    # pair of delta networks will be optimized similar to critics
     delta_optimizer = torch.optim.Adam(
         chain(agent.delta1.parameters(), agent.delta2.parameters(),),
         lr=delta_lr,
@@ -196,21 +210,20 @@ def discor(
     log_alpha = torch.Tensor([math.log(init_alpha)]).to(device)
     log_alpha.requires_grad = True
     log_alpha_optimizer = torch.optim.Adam([log_alpha], lr=alpha_lr, betas=(0.5, 0.999))
+    target_entropy = -train_env.action_space.shape[0]
+    # DisCor temperature parameters (DisCor paper Eq 8 tau variable).
     temp1 = torch.Tensor([init_temp]).to(device)
     temp2 = torch.Tensor([init_temp]).to(device)
-    target_entropy = -train_env.action_space.shape[0]
 
     ###################
     ## TRAINING LOOP ##
     ###################
-    # warmup the replay buffer with random actions
     run.warmup_buffer(buffer, train_env, warmup_steps, max_episode_steps)
     done = True
     steps_iter = range(num_steps)
     if verbosity:
         steps_iter = tqdm.tqdm(steps_iter)
     for step in steps_iter:
-        # collect experience
         for _ in range(transitions_per_step):
             if done:
                 state = train_env.reset()
@@ -219,7 +232,6 @@ def discor(
             action = agent.sample_action(state)
             next_state, reward, done, info = train_env.step(action)
             if infinite_bootstrap:
-                # allow infinite bootstrapping
                 if steps_this_ep + 1 == max_episode_steps:
                     done = False
             buffer.push(state, action, reward, next_state, done)
@@ -250,10 +262,10 @@ def discor(
                 update_policy=step % actor_delay == 0,
             )
 
-        # move target model towards training model
         if step % target_delay == 0:
             utils.soft_update(target_agent.critic1, agent.critic1, tau)
             utils.soft_update(target_agent.critic2, agent.critic2, tau)
+            # also update the new error "delta" networks
             utils.soft_update(target_agent.delta1, agent.delta1, tau)
             utils.soft_update(target_agent.delta2, agent.delta2, tau)
 
@@ -294,7 +306,6 @@ def learn_discor(
 ):
     assert not isinstance(buffer, replay.PrioritizedReplayBuffer)
 
-    # prepare transitions for models
     batch = buffer.sample(batch_size)
     state_batch, action_batch, reward_batch, next_state_batch, done_batch = batch
     state_batch = state_batch.to(device)
@@ -312,6 +323,7 @@ def learn_discor(
         action_dist_s1 = agent.actor(next_state_batch)
         action_s1 = action_dist_s1.rsample()
         logp_a1 = action_dist_s1.log_prob(action_s1).sum(-1, keepdim=True)
+        # compute TD target as normal
         target_action_value_s1 = torch.min(
             target_agent.critic1(next_state_batch, action_s1),
             target_agent.critic2(next_state_batch, action_s1),
@@ -321,21 +333,24 @@ def learn_discor(
         )
         target_delta1_s1 = target_agent.delta1(next_state_batch, action_s1)
         target_delta2_s1 = target_agent.delta2(next_state_batch, action_s1)
+        # computing new transition weights to downweight states
+        # where the bootstrapped target is inaccurate. we estimate
+        # this by using the delta networks to predict the error
+        # on the next_state_batch. I am not 100% sure whether it is
+        # better to use the target_agent delta nets or agent delta nets
+        # here. Figure 22 in the DisCor paper suggests the online agent,
+        # but using the target would save us 2 forward passes...
         disCor_weights1 = batch_size * torch.softmax(
-            -(
-                (1.0 - done_batch)
-                * gamma
-                * agent.delta1(next_state_batch, action_s1)
-            )
+            -(1.0 - done_batch)
+            * gamma
+            * agent.delta1(next_state_batch, action_s1)
             / temp1,
             dim=0,
         )
         disCor_weights2 = batch_size * torch.softmax(
-            -(
-                (1.0 - done_batch)
-                * gamma
-                * agent.delta2(next_state_batch, action_s1)
-            )
+            -(1.0 - done_batch)
+            * gamma
+            * agent.delta2(next_state_batch, action_s1)
             / temp2,
             dim=0,
         )
@@ -344,6 +359,7 @@ def learn_discor(
     agent_critic2_pred = agent.critic2(state_batch, action_batch)
     td_error1 = td_target - agent_critic1_pred
     td_error2 = td_target - agent_critic2_pred
+    # reweight based on discor weights
     critic1_loss = disCor_weights1 * (td_error1 ** 2)
     critic2_loss = disCor_weights2 * (td_error2 ** 2)
     critic_loss = (critic1_loss + critic2_loss).mean()
@@ -355,22 +371,22 @@ def learn_discor(
         )
     critic_optimizer.step()
 
-    ###################
-    ## DisCor Update ##
-    ###################
+    #########################
+    ## DisCor Delta Update ##
+    #########################
     with torch.no_grad():
+        # compute error targets (DisCor paper Alg 3 line 5)
         target_delta1 = (
             torch.abs(td_error1) + gamma * (1.0 - done_batch) * target_delta1_s1
         )
         target_delta2 = (
             torch.abs(td_error2) + gamma * (1.0 - done_batch) * target_delta2_s1
         )
-    delta1_loss = (
-        target_delta1.detach() - agent.delta1(state_batch, action_batch)
-    ) ** 2
-    delta2_loss = (
-        target_delta2.detach() - agent.delta2(state_batch, action_batch)
-    ) ** 2
+    # delta network loss (DisCor paper Alg 3 line 8)
+    delta1_pred = agent.delta1(state_batch, action_batch)
+    delta2_pred = agent.delta2(state_batch, action_batch)
+    delta1_loss = (target_delta1 - delta1_pred) ** 2
+    delta2_loss = (target_delta2 - delta2_pred) ** 2
     delta_loss = (delta1_loss + delta2_loss).mean()
     delta_optimizer.zero_grad()
     delta_loss.backward()
@@ -379,12 +395,9 @@ def learn_discor(
             chain(agent.delta1.parameters(), agent.delta2.parameters()), delta_clip
         )
     delta_optimizer.step()
-    temp1.data = temp1.data * (1.0 - tau) + (
-        tau * torch.mean(agent.delta1(state_batch, action_batch))
-    )
-    temp2.data = temp2.data * (1.0 - tau) + (
-        tau * torch.mean(agent.delta2(state_batch, action_batch))
-    )
+    # auto-adjust temperatures (DisCor paper Alg 3 line 11)
+    temp1.data = temp1.data * (1.0 - tau) + (tau * torch.mean(delta1_pred))
+    temp2.data = temp2.data * (1.0 - tau) + (tau * torch.mean(delta2_pred))
 
     if update_policy:
         ##################
@@ -439,10 +452,13 @@ def add_args(parser):
         "--tau", type=float, default=0.005, help="for model parameter % update"
     )
     parser.add_argument(
-        "--actor_lr", type=float, default=1e-4, help="actor learning rate"
+        "--actor_lr", type=float, default=3e-4, help="actor learning rate"
     )
     parser.add_argument(
-        "--critic_lr", type=float, default=1e-4, help="critic learning rate"
+        "--critic_lr", type=float, default=3e-4, help="critic learning rate"
+    )
+    parser.add_argument(
+        "--delta_lr", type=float, default=3e-4, help="delta learning rate"
     )
     parser.add_argument(
         "--gamma", type=float, default=0.99, help="gamma, the discount factor"
