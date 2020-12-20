@@ -2,10 +2,8 @@ import argparse
 import copy
 import math
 import os
-import time
 from itertools import chain
 
-import gym
 import numpy as np
 import tensorboardX
 import torch
@@ -18,8 +16,23 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class GRACAgent(sac.SACAgent):
-    def __init__(self, obs_space_size, act_space_size, log_std_low, log_std_high):
-        super().__init__(obs_space_size, act_space_size, log_std_low, log_std_high)
+    def __init__(
+        self,
+        obs_space_size,
+        act_space_size,
+        log_std_low,
+        log_std_high,
+        actor_net_cls=nets.StochasticActor,
+        critic_net_cls=nets.BigCritic,
+    ):
+        super().__init__(
+            obs_space_size,
+            act_space_size,
+            log_std_low,
+            log_std_high,
+            actor_net_cls,
+            critic_net_cls,
+        )
         # the standard pytorch_distributions implementation seems
         # to be too numerically unstable for GRAC's low-prob CEM actions.
         self.actor.dist_impl = "simple"

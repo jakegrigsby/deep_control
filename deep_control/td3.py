@@ -1,10 +1,8 @@
 import argparse
 import copy
 import os
-import time
 from itertools import chain
 
-import gym
 import numpy as np
 import tensorboardX
 import torch
@@ -17,10 +15,16 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class TD3Agent:
-    def __init__(self, obs_space_size, act_space_size):
-        self.actor = nets.BaselineActor(obs_space_size, act_space_size)
-        self.critic1 = nets.BaselineCritic(obs_space_size, act_space_size)
-        self.critic2 = nets.BaselineCritic(obs_space_size, act_space_size)
+    def __init__(
+        self,
+        obs_space_size,
+        act_space_size,
+        actor_net_cls=nets.BaselineActor,
+        critic_net_cls=nets.BaselineCritic,
+    ):
+        self.actor = actor_net_cls(obs_space_size, act_space_size)
+        self.critic1 = critic_net_cls(obs_space_size, act_space_size)
+        self.critic2 = critic_net_cls(obs_space_size, act_space_size)
 
     def to(self, device):
         self.actor = self.actor.to(device)

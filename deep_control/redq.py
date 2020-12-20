@@ -2,11 +2,9 @@ import argparse
 import copy
 import math
 import os
-import time
 from itertools import chain
 import random
 
-import gym
 import numpy as np
 import tensorboardX
 import torch
@@ -24,12 +22,14 @@ class REDQAgent:
         log_std_low,
         log_std_high,
         critic_ensemble_size=10,
+        actor_network_cls=nets.StochasticActor,
+        critic_network_cls=nets.BigCritic,
     ):
-        self.actor = nets.StochasticActor(
+        self.actor = actor_network_cls(
             obs_space_size, act_space_size, log_std_low, log_std_high, dist_impl="pyd",
         )
         self.critics = [
-            nets.BigCritic(obs_space_size, act_space_size)
+            critic_network_cls(obs_space_size, act_space_size)
             for _ in range(critic_ensemble_size)
         ]
 

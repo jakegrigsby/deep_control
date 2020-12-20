@@ -2,10 +2,8 @@ import argparse
 import copy
 import math
 import os
-import time
 from itertools import chain
 
-import gym
 import numpy as np
 import tensorboardX
 import torch
@@ -18,12 +16,20 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class SACAgent:
-    def __init__(self, obs_space_size, act_space_size, log_std_low, log_std_high):
-        self.actor = nets.StochasticActor(
+    def __init__(
+        self,
+        obs_space_size,
+        act_space_size,
+        log_std_low,
+        log_std_high,
+        actor_net_cls=nets.StochasticActor,
+        critic_net_cls=nets.BigCritic,
+    ):
+        self.actor = actor_net_cls(
             obs_space_size, act_space_size, log_std_low, log_std_high, dist_impl="pyd",
         )
-        self.critic1 = nets.BigCritic(obs_space_size, act_space_size)
-        self.critic2 = nets.BigCritic(obs_space_size, act_space_size)
+        self.critic1 = critic_net_cls(obs_space_size, act_space_size)
+        self.critic2 = critic_net_cls(obs_space_size, act_space_size)
 
     def to(self, device):
         self.actor = self.actor.to(device)
