@@ -1,7 +1,7 @@
 # Deep Control
-## Simple Pytorch implementations of Deep RL algorithms for continuous control research
+## Simple PyTorch implementations of Deep RL algorithms for continuous control research
 
-This repository contains re-implementations of Deep RL algorithms for continuos action spaces. Some highlights:
+This repository contains re-implementations of Deep RL algorithms for continuous action spaces. Some highlights:
 
 1) Code is readable, and written to be easy to modify for future research.
 2) Train and Test on different environments (for generalization research).
@@ -17,12 +17,12 @@ Paper: [Continuous control with deep reinforcement learning](https://arxiv.org/a
 
 Description: a baseline model-free, offline, actor-critic method that forms the template for many of the other algorithms here.
 
-Code: `deep_control.ddpg`
+Code: `deep_control.ddpg` (*with extra comments for an intro to deep actor-critics*)
 
 #### Twin Delayed DDPG (TD3)
 Paper: [Addressing Function Approximation Error in Actor-Critic Methods](https://arxiv.org/abs/1802.09477), Fujimoto et al., 2018.
 
-Description: Builds off of DDPG and makes several changes to improve the critic's learning and performance (Clipped Double Q Learning, Target Smoothing, Actor Delay).
+Description: Builds off of DDPG and makes several changes to improve the critic's learning and performance (Clipped Double Q Learning, Target Smoothing, Actor Delay). Also includes the TD regularization term from "[TD-Regularized Actor-Critic Methods](https://arxiv.org/abs/1812.08288)."
 
 Code: `deep_control.td3`
 
