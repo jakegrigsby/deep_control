@@ -321,20 +321,20 @@ def learn_discor(
         )
         target_delta1_s1 = target_agent.delta1(next_state_batch, action_s1)
         target_delta2_s1 = target_agent.delta2(next_state_batch, action_s1)
-        disCor_weights1 = torch.softmax(
+        disCor_weights1 = batch_size * torch.softmax(
             -(
                 (1.0 - done_batch)
                 * gamma
-                * target_agent.delta1(next_state_batch, action_s1)
+                * agent.delta1(next_state_batch, action_s1)
             )
             / temp1,
             dim=0,
         )
-        disCor_weights2 = torch.softmax(
+        disCor_weights2 = batch_size * torch.softmax(
             -(
                 (1.0 - done_batch)
                 * gamma
-                * target_agent.delta2(next_state_batch, action_s1)
+                * agent.delta2(next_state_batch, action_s1)
             )
             / temp2,
             dim=0,
