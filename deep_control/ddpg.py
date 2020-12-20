@@ -16,9 +16,15 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class DDPGAgent:
-    def __init__(self, obs_space_size, action_space_size):
-        self.actor = nets.BaselineActor(obs_space_size, action_space_size)
-        self.critic = nets.BaselineCritic(obs_space_size, action_space_size)
+    def __init__(
+        self,
+        obs_space_size,
+        action_space_size,
+        actor_network=nets.BaselineActor,
+        critic_network=nets.BaselineCritic,
+    ):
+        self.actor = actor_network(obs_space_size, action_space_size)
+        self.critic = critic_network(obs_space_size, action_space_size)
 
     def to(self, device):
         self.actor = self.actor.to(device)
@@ -114,6 +120,10 @@ def ddpg(
     utils.hard_update(target_agent.actor, agent.actor)
     utils.hard_update(target_agent.critic, agent.critic)
 
+    # Ornstein-Uhlenbeck is a controlled random walk used
+    # to introduce noise for exploration. The DDPG paper
+    # picks it over the simpler gaussian noise alternative,
+    # but later work has shown this is an unnecessary detail.
     random_process = utils.OrnsteinUhlenbeckProcess(
         theta=theta,
         size=train_env.action_space.shape,
@@ -129,17 +139,24 @@ def ddpg(
         agent.actor.parameters(), lr=actor_lr, weight_decay=actor_l2
     )
 
+    # the replay buffer is filled with a few thousand transitions by
+    # sampling from a uniform random policy, so that learning can begin
+    # from a buffer that is >> the batch size.
     run.warmup_buffer(buffer, train_env, warmup_steps, max_episode_steps)
 
     done = True
 
     steps_iter = range(num_steps)
     if verbosity:
+        # fancy progress bar
         steps_iter = tqdm.tqdm(steps_iter)
 
     for step in steps_iter:
         for _ in range(transitions_per_step):
+            # collect experience from the environment, sampling from
+            # the current policy (with added noise for exploration)
             if done:
+                # reset the environment
                 state = train_env.reset()
                 random_process.reset_states()
                 steps_this_ep = 0
@@ -148,16 +165,27 @@ def ddpg(
             noisy_action = run.exploration_noise(action, random_process)
             next_state, reward, done, info = train_env.step(noisy_action)
             if infinite_bootstrap:
-                # allow infinite bootstrapping
+                # allow infinite bootstrapping. Many envs terminate
+                # (done = True) after an arbitrary number of steps
+                # to let the agent reset and avoid getting stuck in
+                # a failed position. infinite bootstrapping prevents
+                # this from impacting our Q function calculation. This
+                # can be harmful in edge cases where the environment really
+                # would have ended (task failed) regardless of the step limit,
+                # and makes no difference if the environment is not set up
+                # to enforce a limit by itself (but many common benchmarks are).
                 if steps_this_ep + 1 == max_episode_steps:
                     done = False
+            # add this transition to the replay buffer
             buffer.push(state, noisy_action, reward, next_state, done)
             state = next_state
             steps_this_ep += 1
             if steps_this_ep >= max_episode_steps:
+                # enforce max step limit from the agent's perspective
                 done = True
 
         for _ in range(gradient_updates_per_step):
+            # update the actor and critics using the replay buffer
             learn(
                 buffer=buffer,
                 target_agent=target_agent,
@@ -170,7 +198,9 @@ def ddpg(
                 actor_clip=actor_clip,
             )
 
-            # move target model towards training model
+            # move target models towards the online models
+            # CC algorithms typically use a moving average rather
+            # than the full copy of a DQN.
             utils.soft_update(target_agent.actor, agent.actor, tau)
             utils.soft_update(target_agent.critic, agent.critic, tau)
 
@@ -200,8 +230,13 @@ def learn(
     actor_clip,
 ):
     """
-    DDPG inner optimization loop
+    DDPG inner optimization loop. The simplest deep
+    actor critic update.
     """
+    # support for prioritized experience replay is
+    # included in almost every algorithm in this repo. however,
+    # it is somewhat rarely used in recent work because of its
+    # extra hyperparameters and implementation complexity.
     per = isinstance(buffer, replay.PrioritizedReplayBuffer)
     if per:
         batch, imp_weights, priority_idxs = buffer.sample(batch_size)
@@ -209,7 +244,7 @@ def learn(
     else:
         batch = buffer.sample(batch_size)
 
-    # prepare transitions for models
+    # send transitions to the gpu
     state_batch, action_batch, reward_batch, next_state_batch, done_batch = batch
     state_batch = state_batch.to(device)
     next_state_batch = next_state_batch.to(device)
@@ -217,12 +252,18 @@ def learn(
     reward_batch = reward_batch.to(device)
     done_batch = done_batch.to(device)
 
-    # critic update
+    ###################
+    ## Critic Update ##
+    ###################
+
+    # compute target values
     with torch.no_grad():
         target_action_s1 = target_agent.actor(next_state_batch)
         target_action_value_s1 = target_agent.critic(next_state_batch, target_action_s1)
+        # bootstrapped estimate of Q(s, a) based on reward and target network
         td_target = reward_batch + gamma * (1.0 - done_batch) * target_action_value_s1
 
+    # compute mean squared bellman error (MSE(Q(s, a), td_target))
     agent_critic_pred = agent.critic(state_batch, action_batch)
     td_error = td_target - agent_critic_pred
     if per:
@@ -230,21 +271,29 @@ def learn(
     else:
         critic_loss = 0.5 * (td_error ** 2).mean()
     critic_optimizer.zero_grad()
+    # gradient descent step on critic network
     critic_loss.backward()
     if critic_clip:
         torch.nn.utils.clip_grad_norm_(agent.critic.parameters(), critic_clip)
     critic_optimizer.step()
 
-    # actor update
+    ##################
+    ## Actor Update ##
+    ##################
+
+    # actor's objective is to maximize (or minimize the negative of)
+    # the expectation of the critic's opinion of its action choices
     agent_actions = agent.actor(state_batch)
     actor_loss = -agent.critic(state_batch, agent_actions).mean()
     actor_optimizer.zero_grad()
+    # gradient descent step on actor network
     actor_loss.backward()
     if actor_clip:
         torch.nn.utils.clip_grad_norm_(agent.actor.parameters(), actor_clip)
     actor_optimizer.step()
 
     if per:
+        # update prioritized replay distribution
         new_priorities = (abs(td_error) + 1e-5).cpu().detach().squeeze(1).numpy()
         buffer.update_priorities(priority_idxs, new_priorities)
 
@@ -257,7 +306,7 @@ def add_args(parser):
         "--transitions_per_step",
         type=int,
         default=1,
-        help="number of env steps per training step (aka replay ratio numerator)",
+        help="number of env steps per training step",
     )
     parser.add_argument(
         "--max_episode_steps",
@@ -269,18 +318,29 @@ def add_args(parser):
         "--batch_size", type=int, default=256, help="training batch size"
     )
     parser.add_argument(
-        "--tau", type=float, default=0.005, help="for model parameter % update"
+        "--tau",
+        type=float,
+        default=0.005,
+        help="controls the speed that the target networks converge to the online networks",
     )
     parser.add_argument(
-        "--actor_lr", type=float, default=1e-4, help="actor learning rate"
+        "--actor_lr", type=float, default=1e-4, help="actor network learning rate"
     )
     parser.add_argument(
-        "--critic_lr", type=float, default=1e-3, help="critic learning rate"
+        "--critic_lr", type=float, default=1e-3, help="critic network learning rate"
     )
     parser.add_argument(
-        "--gamma", type=float, default=0.99, help="gamma, the discount factor"
+        "--gamma",
+        type=float,
+        default=0.99,
+        help="gamma, the MDP discount factor that determines emphasis on long-term rewards",
     )
-    parser.add_argument("--sigma_final", type=float, default=0.1)
+    parser.add_argument(
+        "--sigma_final",
+        type=float,
+        default=0.1,
+        help="final sigma value for Ornstein Uhlenbeck exploration process",
+    )
     parser.add_argument(
         "--sigma_anneal",
         type=float,
@@ -291,13 +351,13 @@ def add_args(parser):
         "--sigma_start",
         type=float,
         default=0.2,
-        help="sigma for Ornstein Uhlenbeck process computation",
+        help="sigma for Ornstein Uhlenbeck exploration process",
     )
     parser.add_argument(
         "--theta",
         type=float,
         default=0.15,
-        help="theta for Ornstein Uhlenbeck process computation",
+        help="theta for Ornstein Uhlenbeck exploration process",
     )
     parser.add_argument(
         "--eval_interval",
@@ -309,26 +369,85 @@ def add_args(parser):
         "--eval_episodes",
         type=int,
         default=10,
-        help="how many episodes to run for when testing",
+        help="how many episodes to run for when testing. results are averaged over this many episodes",
     )
     parser.add_argument(
-        "--warmup_steps", type=int, default=1000, help="warmup length, in steps"
+        "--warmup_steps",
+        type=int,
+        default=1000,
+        help="how many random steps to take before learning begins",
     )
-    parser.add_argument("--render", action="store_true")
-    parser.add_argument("--actor_clip", type=float, default=None)
-    parser.add_argument("--critic_clip", type=float, default=None)
-    parser.add_argument("--name", type=str, default="ddpg_run")
-    parser.add_argument("--actor_l2", type=float, default=0.0)
-    parser.add_argument("--critic_l2", type=float, default=0.0)
-    parser.add_argument("--save_interval", type=int, default=100_000)
-    parser.add_argument("--verbosity", type=int, default=1)
-    parser.add_argument("--skip_save_to_disk", action="store_true")
-    parser.add_argument("--skip_log_to_disk", action="store_true")
+    parser.add_argument(
+        "--render",
+        action="store_true",
+        help="render the environment during training. can slow training significantly",
+    )
+    parser.add_argument(
+        "--actor_clip",
+        type=float,
+        default=None,
+        help="clip actor gradients based on this norm. less commonly used in actor critic algs than DQN",
+    )
+    parser.add_argument(
+        "--critic_clip",
+        type=float,
+        default=None,
+        help="clip critic gradients based on this norm. less commonly used in actor critic algs than DQN",
+    )
+    parser.add_argument(
+        "--name",
+        type=str,
+        default="ddpg_run",
+        help="we will save the results of this training run in a directory called dc_saves/{this name}",
+    )
+    parser.add_argument(
+        "--actor_l2",
+        type=float,
+        default=0.0,
+        help="actor network L2 regularization coeff. Typically not helpful in single-environment settings",
+    )
+    parser.add_argument(
+        "--critic_l2",
+        type=float,
+        default=0.0,
+        help="critic network L2 regularization coeff. Typically not helpful in single-environment settings",
+    )
+    parser.add_argument(
+        "--save_interval",
+        type=int,
+        default=100_000,
+        help="how often (in terms of steps) to save the network weights to disk",
+    )
+    parser.add_argument(
+        "--verbosity",
+        type=int,
+        default=1,
+        help="set to 0 for quiet mode (limit printing to std out). 1 shows a progress bar",
+    )
+    parser.add_argument(
+        "--skip_save_to_disk",
+        action="store_true",
+        help="do not save the agent weights to disk during this training run",
+    )
+    parser.add_argument(
+        "--skip_log_to_disk",
+        action="store_true",
+        help="do not write results to tensorboard during this training run",
+    )
     parser.add_argument(
         "--gradient_updates_per_step",
         type=int,
         default=1,
         help="learning updates per training step (aka replay ratio denominator)",
     )
-    parser.add_argument("--prioritized_replay", action="store_true")
-    parser.add_argument("--buffer_size", type=int, default=1_000_000)
+    parser.add_argument(
+        "--prioritized_replay",
+        action="store_true",
+        help="Flag to enable prioritized experience replay",
+    )
+    parser.add_argument(
+        "--buffer_size",
+        type=int,
+        default=1_000_000,
+        help="Maximum size of the replay buffer before oldest transitions are overwritten. Note that the default deep_control buffer allocates all of this space at the start of training to fail fast when there won't be enough space.",
+    )
