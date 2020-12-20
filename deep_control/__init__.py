@@ -2,4 +2,16 @@ import torch
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-from . import ddpg, mbpo, models, sac, sac_aug, td3, grac, redq, tsr_caql, discor
+from . import (
+    ddpg,
+    mbpo,
+    models,
+    sac,
+    sac_aug,
+    td3,
+    grac,
+    redq,
+    tsr_caql,
+    discor,
+    sunrise,
+)
