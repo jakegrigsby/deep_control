@@ -388,7 +388,9 @@ def learn_sunrise(
     actor_optimizer.zero_grad()
     actor_loss.backward()
     if actor_clip:
-        torch.nn.utils.clip_grad_norm_(actor.parameters(), actor_clip)
+        torch.nn.utils.clip_grad_norm_(
+            chain(*(actor.parameters() for actor in agent.actors)), actor_clip
+        )
     actor_optimizer.step()
 
     if per:
