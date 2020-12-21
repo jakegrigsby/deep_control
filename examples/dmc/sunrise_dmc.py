@@ -17,6 +17,7 @@ def train_dmc_sunrise(args):
         args.log_std_low,
         args.log_std_high,
         args.ensemble_size,
+        args.ucb_bonus,
     )
 
     # select a replay buffer

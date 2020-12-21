@@ -96,11 +96,16 @@ class SunriseAgent:
         with torch.no_grad():
             # generate a candidate action from each actor
             act_candidates = torch.stack(
-                [actor.forward(state).sample().squeeze(0) for actor in self.actors], dim=0
+                [actor.forward(state).sample().squeeze(0) for actor in self.actors],
+                dim=0,
             )
             # evaluate each action on each critic, for NxN q vals
             q_vals = torch.stack(
-                [critic(state.repeat(len(act_candidates), 1), act_candidates) for critic in self.critics], dim=0
+                [
+                    critic(state.repeat(len(act_candidates), 1), act_candidates)
+                    for critic in self.critics
+                ],
+                dim=0,
             )
             # use mean and std over the critic axis to compute ucb term
             ucb_val = q_vals.mean(0) + self.ucb_bonus * q_vals.std(0)
@@ -151,7 +156,7 @@ def sunrise(
     verbosity=0,
     gradient_updates_per_step=1,
     init_alpha=0.1,
-    weighted_bellman_temp=20,
+    weighted_bellman_temp=20.0,
     infinite_bootstrap=True,
     **kwargs,
 ):
@@ -296,9 +301,12 @@ def learn_sunrise(
     ## CRITIC UPDATE ##
     ###################
 
-    # compute weighted bellman coeffs using SUNRISE Eq 5
-    target_q_std = torch.stack([q(state_batch, action_batch) for q in target_agent.critics], dim=0).std(0)
-    weights = torch.sigmoid(-target_q_std * weighted_bellman_temp) + 0.5
+    with torch.no_grad():
+        # compute weighted bellman coeffs using SUNRISE Eq 5
+        target_q_std = torch.stack(
+            [q(state_batch, action_batch) for q in target_agent.critics], dim=0
+        ).std(0)
+        weights = torch.sigmoid(-target_q_std * weighted_bellman_temp) + 0.5
 
     # now we compute the MSBE of each critic relative to its own target
     critic_loss = 0.0
@@ -345,17 +353,20 @@ def learn_sunrise(
         logp_a = dist.log_prob(agent_actions).sum(-1, keepdim=True)
         # use corresponding critic to evaluate this action
         critic_pred = agent.critics[i](state_batch, agent_actions)
-        actor_loss += -(critic_pred - (log_alphas[i].exp() * logp_a)).mean()
+        actor_loss += -(critic_pred - (log_alphas[i].exp().detach() * logp_a)).mean()
+
         # each agent in the ensemble has its own alpha (entropy) coeff,
         # which we update inside the actor loop so we can use the logp_a terms
         alpha_loss = (-log_alphas[i].exp() * (logp_a + target_entropy).detach()).mean()
         alpha_optimizers[i].zero_grad()
         alpha_loss.backward()
         alpha_optimizers[i].step()
+
+    # actor gradient step
     actor_optimizer.zero_grad()
     actor_loss.backward()
     if actor_clip:
-        torch.nn.utils.clip_grad_norm_(agent.actor.parameters(), actor_clip)
+        torch.nn.utils.clip_grad_norm_(actor.parameters(), actor_clip)
     actor_optimizer.step()
 
     if per:
@@ -478,16 +489,10 @@ def add_args(parser):
         help="verbosity > 0 displays a progress bar during training",
     )
     parser.add_argument(
-        "--critic_updates_per_step",
-        type=int,
-        default=20,
-        help="how many critic gradient updates to make per training step. The REDQ paper calls this variable G.",
-    )
-    parser.add_argument(
-        "--actor_updates_per_step",
+        "--gradient_updates_per_step",
         type=int,
         default=1,
-        help="how many actor gradient updates to make per training step",
+        help="how many gradient updates to make per training step",
     )
     parser.add_argument(
         "--prioritized_replay",
@@ -517,14 +522,17 @@ def add_args(parser):
         help="Upper bound for log std of action distribution.",
     )
     parser.add_argument(
-        "--random_ensemble_size",
-        type=int,
-        default=2,
-        help="How many random critic networks to use per TD target computation. The REDQ paper calls this variable M",
+        "--ensemble_size", type=int, default=3, help="SUNRISE ensemble size",
     )
     parser.add_argument(
-        "--ensemble_size",
-        type=int,
-        default=3,
-        help="How many critic networks to sample from on each TD target computation. This it the total size of the critic ensemble. The REDQ paper calls this variable N",
+        "--ucb_bonus",
+        type=float,
+        default=5.0,
+        help="coeff for std term in ucb exploration. higher values prioritize exploring uncertain actions",
+    )
+    parser.add_argument(
+        "--weighted_bellman_temp",
+        type=float,
+        default=20.0,
+        help="temperature in sunrise's weight adjustment. See equation 5 of the sunrise paper",
     )
