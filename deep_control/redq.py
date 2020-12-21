@@ -320,7 +320,7 @@ def learn_critics(
     critic_loss.backward()
     if critic_clip:
         torch.nn.utils.clip_grad_norm_(
-            chain(*(critic.parameters() for critic in agent.critics)),
+            chain(*(critic.parameters() for critic in agent.critics)), critic_clip,
         )
     critic_optimizer.step()
 
