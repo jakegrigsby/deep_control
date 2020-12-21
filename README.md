@@ -81,6 +81,13 @@ Description: Reduce the effect of inaccurate target values propagating through t
 
 Code: `deep_control.discor`
 
+#### Simple Unified Framework for Ensemble Learning (SUNRISE)
+Paper: [SUNRISE: A Simple Unified Framework for Ensemble Learning in Deep Reinforcement Learning](https://arxiv.org/abs/2007.04938), Lee et al., 2020.
+
+Description: Extends SAC using an ensemble of actors and critics. Adds UCB-based exploration, ensembled inference, and a simpler weighted bellman backup. This version does not use the replay buffer masks from the original.
+
+Code: `deep_control.sunrise`
+
 ### Installation
 ```bash
 git clone https://github.com/jakegrigsby/deep_control.git

@@ -14,74 +14,105 @@ import tqdm
 from . import envs, nets, replay, run, utils, device
 
 
-class REDQAgent:
+class SunriseAgent:
     def __init__(
         self,
         obs_space_size,
         act_space_size,
         log_std_low,
         log_std_high,
-        critic_ensemble_size=10,
-        actor_network_cls=nets.StochasticActor,
-        critic_network_cls=nets.BigCritic,
+        ensemble_size=5,
+        ucb_bonus=5.0,
+        actor_net_cls=nets.StochasticActor,
+        critic_net_cls=nets.BigCritic,
     ):
-        self.actor = actor_network_cls(
-            obs_space_size, act_space_size, log_std_low, log_std_high, dist_impl="pyd",
-        )
-        self.critics = [
-            critic_network_cls(obs_space_size, act_space_size)
-            for _ in range(critic_ensemble_size)
+        self.actors = [
+            actor_net_cls(
+                obs_space_size,
+                act_space_size,
+                log_std_low,
+                log_std_high,
+                dist_impl="pyd",
+            )
+            for _ in range(ensemble_size)
         ]
+        self.critics = [
+            critic_net_cls(obs_space_size, act_space_size) for _ in range(ensemble_size)
+        ]
+        # SUNRISE Eq 6 lambda variable
+        self.ucb_bonus = ucb_bonus
 
     def to(self, device):
-        self.actor = self.actor.to(device)
-        for i, critic in enumerate(self.critics):
+        for i, (actor, critic) in enumerate(zip(self.actors, self.critics)):
             self.critics[i] = critic.to(device)
+            self.actors[i] = actor.to(device)
 
     def eval(self):
-        self.actor.eval()
-        for critic in self.critics:
+        for actor, critic in zip(self.actors, self.critics):
             critic.eval()
+            actor.eval()
 
     def train(self):
-        self.actor.train()
-        for critic in self.critics:
+        for actor, critic in zip(self.actors, self.critics):
             critic.train()
+            actor.train()
 
     def save(self, path):
-        actor_path = os.path.join(path, "actor.pt")
-        torch.save(self.actor.state_dict(), actor_path)
-        for i, critic in enumerate(self.critics):
+        for i, (actor, critic) in enumerate(zip(self.actors, self.critics)):
+            actor_path = os.path.join(path, f"actor{i}.pt")
             critic_path = os.path.join(path, f"critic{i}.pt")
+            torch.save(actor.state_dict(), actor_path)
             torch.save(critic.state_dict(), critic_path)
 
     def load(self, path):
-        actor_path = os.path.join(path, "actor.pt")
-        self.actor.load_state_dict(torch.load(actor_path))
-        for i, critic in enumerate(self.critics):
+        for i, (actor, critic) in enumerate(zip(self.actors, self.critics)):
+            actor_path = os.path.join(path, f"actor{i}.pt")
             critic_path = os.path.join(path, f"critic{i}.pt")
+            actor.load_state_dict(torch.load(actor_path))
             critic.load_state_dict(torch.load(critic_path))
 
     def forward(self, state, from_cpu=True):
+        # evaluation forward:
+        # take the average of the mean of each
+        # actor's distribution.
         if from_cpu:
             state = self.process_state(state)
-        self.actor.eval()
+        self.eval()
         with torch.no_grad():
-            act_dist = self.actor.forward(state)
-            act = act_dist.mean
-        self.actor.train()
+            act = torch.stack(
+                [actor.forward(state).mean for actor in self.actors], dim=0
+            ).mean(0)
+        self.train()
         if from_cpu:
             act = self.process_act(act)
         return act
 
     def sample_action(self, state, from_cpu=True):
+        # training (exploration) forward:
         if from_cpu:
             state = self.process_state(state)
-        self.actor.eval()
+        self.eval()
+        # a = argmax_a Q_mean(s, a) + \lambda * Q_std(s, a)
         with torch.no_grad():
-            act_dist = self.actor.forward(state)
-            act = act_dist.sample()
-        self.actor.train()
+            # generate a candidate action from each actor
+            act_candidates = torch.stack(
+                [actor.forward(state).sample().squeeze(0) for actor in self.actors],
+                dim=0,
+            )
+            # evaluate each action on each critic, for NxN q vals
+            q_vals = torch.stack(
+                [
+                    critic(state.repeat(len(act_candidates), 1), act_candidates)
+                    for critic in self.critics
+                ],
+                dim=0,
+            )
+            # use mean and std over the critic axis to compute ucb term
+            ucb_val = q_vals.mean(0) + self.ucb_bonus * q_vals.std(0)
+            # argmax over action axis
+            argmax_ucb_val = torch.argmax(ucb_val)
+            act = act_candidates[argmax_ucb_val].unsqueeze(0)
+        self.train()
         if from_cpu:
             act = self.process_act(act)
         return act
@@ -95,7 +126,7 @@ class REDQAgent:
         return np.squeeze(act.clamp(-1.0, 1.0).cpu().numpy(), 0)
 
 
-def redq(
+def sunrise(
     agent,
     buffer,
     train_env,
@@ -118,37 +149,43 @@ def redq(
     critic_l2=0.0,
     target_delay=2,
     save_interval=100_000,
-    name="redq_run",
+    name="sunrise_run",
     render=False,
     save_to_disk=True,
     log_to_disk=True,
     verbosity=0,
-    actor_updates_per_step=1,
-    critic_updates_per_step=20,
-    random_ensemble_size=2,
+    gradient_updates_per_step=1,
     init_alpha=0.1,
+    weighted_bellman_temp=20.0,
     infinite_bootstrap=True,
     **kwargs,
 ):
     """
-    "Randomized Ensembled Dobule Q-Learning: Learning Fast Without a Model", Chen et al., 2020
+    "SUNRISE: A Simple Unified Framework for Ensemble Learning 
+    in Deep Reinforcement Learning", Lee et al., 2020.
 
-    REDQ is an extension of the clipped double Q learning trick. To create the
-    target value, we sample M critic networks from an ensemble of size N. This
-    reduces the overestimation bias of the critics, and also allows us to use
-    much higher replay ratios (actor_updates_per_step or critic_updates_per_step 
-    >> transitions_per_step). This makes REDQ very sample efficient, but really
-    hurts wall clock time relative to SAC/TD3. REDQ's sample efficiency makes 
-    MBPO a more fair comparison, in which case it would be considered fast.
-    REDQ can be applied to just about any actor-critic algorithm; we implement 
-    it on SAC here.
+    SUNRISE extends SAC by adding:
+    1. An ensemble of actors and critics
+        - Less explicitly focused on the bias reduction of the Q
+          network than something like REDQ or Maxmin Q.
+    2. UCB Exploration
+        - Leverage ensemble of critics to encourage exploration
+          in uncertain states.
+    3. Weighted Bellman Backups
+        - Similar motivation to DisCor but without the extra error
+          predicting networks. Much simpler.
+    4. Ensembled Inference
+        - Each actor trains to maximize one critic, but their action
+          distributions are averaged at inference time. This is slower
+          than other ensembling methods, where the actor trains on all
+          of the critics.
+    
+    Reference: https://arxiv.org/abs/2007.04938
     """
-    assert len(agent.critics) >= random_ensemble_size
 
     if save_to_disk or log_to_disk:
         save_dir = utils.make_process_dirs(name)
     if log_to_disk:
-        # create tb writer, save hparams
         writer = tensorboardX.SummaryWriter(save_dir)
         writer.add_hparams(locals(), {})
 
@@ -157,14 +194,12 @@ def redq(
     ###########
     agent.to(device)
     agent.train()
-    # initialize target networks
     target_agent = copy.deepcopy(agent)
-    target_agent.to(device)
+    # initialize all of the critic targets
     for target_critic, agent_critic in zip(target_agent.critics, agent.critics):
         utils.hard_update(target_critic, agent_critic)
     target_agent.train()
 
-    # set up optimizers
     critic_optimizer = torch.optim.Adam(
         chain(*(critic.parameters() for critic in agent.critics)),
         lr=critic_lr,
@@ -172,72 +207,66 @@ def redq(
         betas=(0.9, 0.999),
     )
     actor_optimizer = torch.optim.Adam(
-        agent.actor.parameters(),
+        chain(*(actor.parameters() for actor in agent.actors)),
         lr=actor_lr,
         weight_decay=actor_l2,
         betas=(0.9, 0.999),
     )
-    log_alpha = torch.Tensor([math.log(init_alpha)]).to(device)
-    log_alpha.requires_grad = True
-    log_alpha_optimizer = torch.optim.Adam([log_alpha], lr=alpha_lr, betas=(0.5, 0.999))
+
+    # create a separate entropy coeff for each agent in the ensemble
+    log_alphas, alpha_optimizers = [], []
+    for _ in range(len(agent.actors)):
+        log_alpha = torch.Tensor([math.log(init_alpha)]).to(device)
+        log_alpha.requires_grad = True
+        alpha_optimizer = torch.optim.Adam([log_alpha], lr=alpha_lr, betas=(0.5, 0.999))
+        log_alphas.append(log_alpha)
+        alpha_optimizers.append(alpha_optimizer)
     target_entropy = -train_env.action_space.shape[0]
 
     ###################
     ## TRAINING LOOP ##
     ###################
-    # warmup the replay buffer with random actions
     run.warmup_buffer(buffer, train_env, warmup_steps, max_episode_steps)
     done = True
     steps_iter = range(num_steps)
     if verbosity:
         steps_iter = tqdm.tqdm(steps_iter)
     for step in steps_iter:
-        # collect experience
         for _ in range(transitions_per_step):
             if done:
                 state = train_env.reset()
                 steps_this_ep = 0
                 done = False
+            # UCB Exploration implemented in agent.sample_action method
             action = agent.sample_action(state)
             next_state, reward, done, info = train_env.step(action)
             if infinite_bootstrap and steps_this_ep + 1 == max_episode_steps:
-                # allow infinite bootstrapping
                 done = False
+            # We are skipping the transition mask idea from the paper
+            # (which is equivalent to setting \Beta = 1. in Alg 1 line 7)
             buffer.push(state, action, reward, next_state, done)
             state = next_state
             steps_this_ep += 1
             if steps_this_ep >= max_episode_steps:
                 done = True
 
-        # critic update
-        for _ in range(critic_updates_per_step):
-            learn_critics(
+        for _ in range(gradient_updates_per_step):
+            learn_sunrise(
                 buffer=buffer,
                 target_agent=target_agent,
                 agent=agent,
                 critic_optimizer=critic_optimizer,
-                log_alpha=log_alpha,
                 batch_size=batch_size,
                 gamma=gamma,
                 critic_clip=critic_clip,
-                random_ensemble_size=random_ensemble_size,
-            )
-
-        # actor update
-        for _ in range(actor_updates_per_step):
-            learn_actor(
-                buffer=buffer,
-                agent=agent,
                 actor_optimizer=actor_optimizer,
-                log_alpha_optimizer=log_alpha_optimizer,
+                alpha_optimizers=alpha_optimizers,
                 target_entropy=target_entropy,
-                batch_size=batch_size,
-                log_alpha=log_alpha,
-                gamma=gamma,
+                log_alphas=log_alphas,
                 actor_clip=actor_clip,
+                weighted_bellman_temp=weighted_bellman_temp,
             )
 
-        # move target model towards training model
         if step % target_delay == 0:
             for (target_critic, agent_critic) in zip(
                 target_agent.critics, agent.critics
@@ -259,16 +288,20 @@ def redq(
     return agent
 
 
-def learn_critics(
+def learn_sunrise(
     buffer,
     target_agent,
     agent,
     critic_optimizer,
     batch_size,
-    log_alpha,
     gamma,
     critic_clip,
-    random_ensemble_size,
+    actor_optimizer,
+    alpha_optimizers,
+    target_entropy,
+    log_alphas,
+    actor_clip,
+    weighted_bellman_temp,
 ):
     per = isinstance(buffer, replay.PrioritizedReplayBuffer)
     if per:
@@ -277,7 +310,6 @@ def learn_critics(
     else:
         batch = buffer.sample(batch_size)
 
-    # prepare transitions for models
     state_batch, action_batch, reward_batch, next_state_batch, done_batch = batch
     state_batch = state_batch.to(device)
     next_state_batch = next_state_batch.to(device)
@@ -290,30 +322,38 @@ def learn_critics(
     ###################
     ## CRITIC UPDATE ##
     ###################
-    alpha = torch.exp(log_alpha)
+
     with torch.no_grad():
-        action_dist_s1 = agent.actor(next_state_batch)
-        action_s1 = action_dist_s1.rsample()
-        logp_a1 = action_dist_s1.log_prob(action_s1).sum(-1, keepdim=True)
+        # compute weighted bellman coeffs using SUNRISE Eq 5
+        target_q_std = torch.stack(
+            [q(state_batch, action_batch) for q in target_agent.critics], dim=0
+        ).std(0)
+        weights = torch.sigmoid(-target_q_std * weighted_bellman_temp) + 0.5
 
-        target_critic_ensemble = random.sample(
-            target_agent.critics, random_ensemble_size
-        )
-        target_critic_ensemble_preds = (
-            critic(next_state_batch, action_s1) for critic in target_critic_ensemble
-        )
-        target_action_value_s1 = torch.min(*target_critic_ensemble_preds)
-        td_target = reward_batch + gamma * (1.0 - done_batch) * (
-            target_action_value_s1 - (alpha * logp_a1)
-        )
-
-    # update critics
+    # now we compute the MSBE of each critic relative to its own target
     critic_loss = 0.0
+    total_abs_td_error = 0.0
     for i, critic in enumerate(agent.critics):
+        with torch.no_grad():
+            # sample an action from actor i
+            action_dist_s1 = agent.actors[i](next_state_batch)
+            action_s1 = action_dist_s1.rsample()
+            logp_a1 = action_dist_s1.log_prob(action_s1).sum(-1, keepdim=True)
+            # generate target network's Q(s', a') prediction
+            target_q_s1 = target_agent.critics[i](next_state_batch, action_s1)
+            # compute TD target value for this critic
+            td_target = reward_batch + gamma * (1.0 - done_batch) * (
+                target_q_s1 - (log_alphas[i].exp() * logp_a1)
+            )
+        # compute MSBE for this critic
         agent_critic_pred = critic(state_batch, action_batch)
         td_error = td_target - agent_critic_pred
-        critic_loss += 0.5 * (td_error ** 2)
+        # SUNRISE Eq 4
+        critic_loss += 0.5 * weights * (td_error ** 2)
+        total_abs_td_error += abs(td_error)
     if per:
+        # priority weights can be used in addition to bellman backup weights.
+        # this is mentioned in the paper for Rainbow DQN but could apply here.
         critic_loss *= imp_weights
     critic_loss = critic_loss.mean()
     critic_optimizer.zero_grad()
@@ -324,61 +364,38 @@ def learn_critics(
         )
     critic_optimizer.step()
 
-    if per:
-        # just using td error of the last critic here, although an average is probably better
-        new_priorities = (abs(td_error) + 1e-5).cpu().detach().squeeze(1).numpy()
-        buffer.update_priorities(priority_idxs, new_priorities)
+    ##########################
+    ## ACTOR + ALPHA UPDATE ##
+    ##########################
+    actor_loss = 0.0
+    for i, actor in enumerate(agent.actors):
+        # sample an action for this actor
+        dist = actor(state_batch)
+        agent_actions = dist.rsample()
+        logp_a = dist.log_prob(agent_actions).sum(-1, keepdim=True)
+        # use corresponding critic to evaluate this action
+        critic_pred = agent.critics[i](state_batch, agent_actions)
+        actor_loss += -(critic_pred - (log_alphas[i].exp().detach() * logp_a)).mean()
 
+        # each agent in the ensemble has its own alpha (entropy) coeff,
+        # which we update inside the actor loop so we can use the logp_a terms
+        alpha_loss = (-log_alphas[i].exp() * (logp_a + target_entropy).detach()).mean()
+        alpha_optimizers[i].zero_grad()
+        alpha_loss.backward()
+        alpha_optimizers[i].step()
 
-def learn_actor(
-    buffer,
-    agent,
-    actor_optimizer,
-    log_alpha_optimizer,
-    target_entropy,
-    batch_size,
-    log_alpha,
-    gamma,
-    actor_clip,
-):
-    per = isinstance(buffer, replay.PrioritizedReplayBuffer)
-    if per:
-        batch, *_ = buffer.sample(batch_size)
-        imp_weights = imp_weights.to(device)
-    else:
-        batch = buffer.sample(batch_size)
-
-    # prepare transitions for models
-    state_batch, *_ = batch
-    state_batch = state_batch.to(device)
-
-    agent.train()
-    alpha = torch.exp(log_alpha)
-
-    ##################
-    ## ACTOR UPDATE ##
-    ##################
-    dist = agent.actor(state_batch)
-    agent_actions = dist.rsample()
-    logp_a = dist.log_prob(agent_actions).sum(-1, keepdim=True)
-    stacked_preds = torch.stack(
-        [critic(state_batch, agent_actions) for critic in agent.critics], dim=0
-    )
-    mean_critic_pred = torch.mean(stacked_preds, dim=0)
-    actor_loss = -(mean_critic_pred - (alpha.detach() * logp_a)).mean()
+    # actor gradient step
     actor_optimizer.zero_grad()
     actor_loss.backward()
     if actor_clip:
-        torch.nn.utils.clip_grad_norm_(agent.actor.parameters(), actor_clip)
+        torch.nn.utils.clip_grad_norm_(actor.parameters(), actor_clip)
     actor_optimizer.step()
 
-    ##################
-    ## ALPHA UPDATE ##
-    ##################
-    alpha_loss = (-alpha * (logp_a + target_entropy).detach()).mean()
-    log_alpha_optimizer.zero_grad()
-    alpha_loss.backward()
-    log_alpha_optimizer.step()
+    if per:
+        ensemble_size = float(len(agent.actors))
+        avg_abs_td_error = total_abs_td_error / ensemble_size
+        new_priorities = (avg_abs_td_error + 1e-5).cpu().detach().squeeze(1).numpy()
+        buffer.update_priorities(priority_idxs, new_priorities)
 
 
 def add_args(parser):
@@ -494,16 +511,10 @@ def add_args(parser):
         help="verbosity > 0 displays a progress bar during training",
     )
     parser.add_argument(
-        "--critic_updates_per_step",
-        type=int,
-        default=20,
-        help="how many critic gradient updates to make per training step. The REDQ paper calls this variable G.",
-    )
-    parser.add_argument(
-        "--actor_updates_per_step",
+        "--gradient_updates_per_step",
         type=int,
         default=1,
-        help="how many actor gradient updates to make per training step",
+        help="how many gradient updates to make per training step",
     )
     parser.add_argument(
         "--prioritized_replay",
@@ -533,14 +544,17 @@ def add_args(parser):
         help="Upper bound for log std of action distribution.",
     )
     parser.add_argument(
-        "--random_ensemble_size",
-        type=int,
-        default=2,
-        help="How many random critic networks to use per TD target computation. The REDQ paper calls this variable M",
+        "--ensemble_size", type=int, default=5, help="SUNRISE ensemble size",
     )
     parser.add_argument(
-        "--critic_ensemble_size",
-        type=int,
-        default=10,
-        help="How many critic networks to sample from on each TD target computation. This it the total size of the critic ensemble. The REDQ paper calls this variable N",
+        "--ucb_bonus",
+        type=float,
+        default=5.0,
+        help="coeff for std term in ucb exploration. higher values prioritize exploring uncertain actions",
+    )
+    parser.add_argument(
+        "--weighted_bellman_temp",
+        type=float,
+        default=20.0,
+        help="temperature in sunrise's weight adjustment. See equation 5 of the sunrise paper",
     )

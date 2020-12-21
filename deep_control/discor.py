@@ -2,10 +2,8 @@ import argparse
 import copy
 import math
 import os
-import time
 from itertools import chain
 
-import gym
 import numpy as np
 import tensorboardX
 import torch

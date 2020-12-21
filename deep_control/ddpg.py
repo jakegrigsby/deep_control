@@ -1,9 +1,7 @@
 import argparse
 import copy
 import os
-import time
 
-import gym
 import numpy as np
 import tensorboardX
 import torch
@@ -20,11 +18,11 @@ class DDPGAgent:
         self,
         obs_space_size,
         action_space_size,
-        actor_network=nets.BaselineActor,
-        critic_network=nets.BaselineCritic,
+        actor_net_cls=nets.BaselineActor,
+        critic_net_cls=nets.BaselineCritic,
     ):
-        self.actor = actor_network(obs_space_size, action_space_size)
-        self.critic = critic_network(obs_space_size, action_space_size)
+        self.actor = actor_net_cls(obs_space_size, action_space_size)
+        self.critic = critic_net_cls(obs_space_size, action_space_size)
 
     def to(self, device):
         self.actor = self.actor.to(device)
