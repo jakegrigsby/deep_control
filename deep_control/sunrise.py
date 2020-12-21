@@ -160,6 +160,28 @@ def sunrise(
     infinite_bootstrap=True,
     **kwargs,
 ):
+    """
+    "SUNRISE: A Simple Unified Framework for Ensemble Learning 
+    in Deep Reinforcement Learning", Lee et al., 2020.
+
+    SUNRISE extends SAC by adding:
+    1. An ensemble of actors and critics
+        - Less explicitly focused on the bias reduction of the Q
+          network than something like REDQ or Maxmin Q.
+    2. UCB Exploration
+        - Leverage ensemble of critics to encourage exploration
+          in uncertain states.
+    3. Weighted Bellman Backups
+        - Similar motivation to DisCor but without the extra error
+          predicting networks. Much simpler.
+    4. Ensembled Inference
+        - Each actor trains to maximize one critic, but their action
+          distributions are averaged at inference time. This is slower
+          than other ensembling methods, where the actor trains on all
+          of the critics.
+    
+    Reference: https://arxiv.org/abs/2007.04938
+    """
 
     if save_to_disk or log_to_disk:
         save_dir = utils.make_process_dirs(name)
@@ -522,7 +544,7 @@ def add_args(parser):
         help="Upper bound for log std of action distribution.",
     )
     parser.add_argument(
-        "--ensemble_size", type=int, default=3, help="SUNRISE ensemble size",
+        "--ensemble_size", type=int, default=5, help="SUNRISE ensemble size",
     )
     parser.add_argument(
         "--ucb_bonus",
