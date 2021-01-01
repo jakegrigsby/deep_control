@@ -18,6 +18,7 @@ Paper: [Continuous control with deep reinforcement learning](https://arxiv.org/a
 Description: a baseline model-free, offline, actor-critic method that forms the template for many of the other algorithms here.
 
 Code: `deep_control.ddpg` (*with extra comments for an intro to deep actor-critics*)
+Examples: `examples/basic_control/ddpg_gym.py`
 
 #### Twin Delayed DDPG (TD3)
 Paper: [Addressing Function Approximation Error in Actor-Critic Methods](https://arxiv.org/abs/1802.09477), Fujimoto et al., 2018.
@@ -25,6 +26,7 @@ Paper: [Addressing Function Approximation Error in Actor-Critic Methods](https:/
 Description: Builds off of DDPG and makes several changes to improve the critic's learning and performance (Clipped Double Q Learning, Target Smoothing, Actor Delay). Also includes the TD regularization term from "[TD-Regularized Actor-Critic Methods](https://arxiv.org/abs/1812.08288)."
 
 Code: `deep_control.td3`
+Examples: `examples/basic_control/td3_gym.py`
 
 Other References: [author's implementation](https://github.com/sfujim/TD3)
 
@@ -35,6 +37,7 @@ Description: Samples actions from a stochastic actor rather than relying on adde
 applying the self-regularized crticic updates from GRAC (see below).
 
 Code: `deep_control.sac`
+Examples: `examples/dmc/sac.py`, `examples/sacd_demo.py`
 
 Other References: [Yarats and Kostrikov's implementation](https://github.com/denisyarats/pytorch_sac), [author's implementation](https://github.com/haarnoja/sac).
 
@@ -44,6 +47,7 @@ Paper: [Measuring Visual Generalization in Continuous Control from Pixels](https
 Description: This is a pixel-specific version of SAC with a few tricks/hyperparemter settings to improve performance. We include many different data augmentation techniques, including those used in [RAD](https://arxiv.org/abs/2004.14990), [DrQ](https://arxiv.org/abs/2004.13649) and [Network Randomization](https://arxiv.org/abs/1910.05396). The DrQ augmentation is turned on by default, and has a huge impact on performance.
 
 Code: `deep_control.sac_aug`
+Examples: `examples/dmcr/sac_aug.py`
 
 Other References: [SAC+AE code](https://github.com/denisyarats/pytorch_sac_ae), [RAD Procgen code](https://github.com/pokaxpoka/rad_procgen).
 
@@ -53,8 +57,40 @@ Paper: [GRAC: Self-Regularized Actor-Critic](https://arxiv.org/abs/2009.08973), 
 Description: GRAC is a combination of a stochastic policy with TD3-like stability improvements and CEM-based action selection like you'd see in Qt-Opt or CAQL.
 
 Code: `deep_control.grac`
+Examples: `examples/dmc/grac.py`
 
 Other References: [author's implementation](https://github.com/stanford-iprl-lab/GRAC)
+
+#### Randomized Ensemble Double Q-Learning (REDQ)
+Paper: [Randomized Ensemble Double Q-Learning: Learning Fast Without a Model](https://openreview.net/forum?id=AY8zfZm0tDd)
+
+Description: Extends the double Q trick to random subsets of a larger critic ensemble. Reduced Q function bias allows for a much higher replay ratio. REDQ is sample efficient but slow (compared to other model-free methods). We implement the SAC version.
+
+Code: `deep_control.redq`
+Examples: `examples/dmc/redq.py`
+
+#### Distributional Correction (DisCor)
+Paper: [DisCor: Corrective Feedback in Reinforcement Learning via Distribution Correction](https://arxiv.org/abs/2003.07305), Kumar et al., 2020.
+
+Description: Reduce the effect of inaccurate target values propagating through the Q-function by learning to estimate the target networks' inaccuracies and adjusting the TD error accordingly. Implemented on top of standard SAC.
+
+Code: `deep_control.discor`
+Examples: `examples/dmc/discor.py`
+
+#### Simple Unified Framework for Ensemble Learning (SUNRISE)
+Paper: [SUNRISE: A Simple Unified Framework for Ensemble Learning in Deep Reinforcement Learning](https://arxiv.org/abs/2007.04938), Lee et al., 2020.
+
+Description: Extends SAC using an ensemble of actors and critics. Adds UCB-based exploration, ensembled inference, and a simpler weighted bellman backup. This version does not use the replay buffer masks from the original.
+
+Code: `deep_control.sunrise`
+Examples: `examples/dmc/sunrise.py`
+
+#### Stochastic Behavioral Cloning (SBC)
+
+Description: A simple approach to offline RL that trains the actor network to emulate the action choices of the demonstration dataset. Uses the stochastic actor from SAC and some basic ensembling to make this a reasonable baseline.
+
+Code: `deep_control.sbc`
+Examples: `examples/d4rl/sbc.py`
 
 #### Model Based Policy Optimization (MBPO)
 Paper: [When to Trust Your Model: Model-Based Policy Optimization](https://arxiv.org/abs/1906.08253), Janner et al., 2019.
@@ -67,26 +103,6 @@ Code: `deep_control.mbpo`
 
 Other References: [author's implementation](https://github.com/JannerM/mbpo).
 
-#### Randomized Ensemble Double Q-Learning (REDQ)
-Paper: [Randomized Ensemble Double Q-Learning: Learning Fast Without a Model](https://openreview.net/forum?id=AY8zfZm0tDd)
-
-Description: Extends the double Q trick to random subsets of a larger critic ensemble. Reduced Q function bias allows for a much higher replay ratio. REDQ is sample efficient but slow (compared to other model-free methods). We implement the SAC version.
-
-Code: `deep_control.redq`
-
-#### Distributional Correction (DisCor)
-Paper: [DisCor: Corrective Feedback in Reinforcement Learning via Distribution Correction](https://arxiv.org/abs/2003.07305), Kumar et al., 2020.
-
-Description: Reduce the effect of inaccurate target values propagating through the Q-function by learning to estimate the target networks' inaccuracies and adjusting the TD error accordingly. Implemented on top of standard SAC.
-
-Code: `deep_control.discor`
-
-#### Simple Unified Framework for Ensemble Learning (SUNRISE)
-Paper: [SUNRISE: A Simple Unified Framework for Ensemble Learning in Deep Reinforcement Learning](https://arxiv.org/abs/2007.04938), Lee et al., 2020.
-
-Description: Extends SAC using an ensemble of actors and critics. Adds UCB-based exploration, ensembled inference, and a simpler weighted bellman backup. This version does not use the replay buffer masks from the original.
-
-Code: `deep_control.sunrise`
 
 ### Installation
 ```bash
