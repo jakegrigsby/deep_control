@@ -577,7 +577,7 @@ def learn_discrete(
     alpha = torch.exp(log_alpha)
     with torch.no_grad():
         # create critic targets (clipped double Q learning)
-        action_dist_s1 = agent.actor(state_batch)
+        action_dist_s1 = agent.actor(next_state_batch)
         action_s1 = action_dist_s1.sample()
         logp_a1 = action_dist_s1.log_prob(action_s1).unsqueeze(1)
         target_value_s1 = (
