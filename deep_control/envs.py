@@ -40,6 +40,78 @@ class NormalizeContinuousActionSpace(gym.ActionWrapper):
         return action
 
 
+def robosuite_action_adjustment(robosuite_env, verbose=False):
+    if verbose:
+        action_space = robosuite_env.action_space
+        high = action_space.high
+        same_high = np.all(high == high[0])
+        low = action_space.low
+        same_low = np.all(low == low[0])
+        shape = action_space.shape[0]
+        print("RoboSuite Action Space Report:")
+        if same_high and same_low:
+            print(f"Uniformly Bounded Action Space in [{low[0]}, {high[0]}]^{shape}")
+        else:
+            print(f"Non-uniform Bounded Action Space with elements = {zip(low, high)}")
+        print("\nAttempting to normalize action space using dc.envs.Normalize...\n")
+    env = NormalizeContinuousActionSpace(robosuite_env)
+    if verbose:
+        action_space = env.action_space
+        high = action_space.high
+        same_high = np.all(high == high[0])
+        low = action_space.low
+        same_low = np.all(low == low[0])
+        shape = action_space.shape[0]
+        print("Normalized RoboSuite Action Space Report:")
+        if same_high and same_low:
+            print(f"Uniformly Bounded Action Space in [{low[0]}, {high[0]}]^{shape}")
+        else:
+            print(f"Non-uniform Bounded Action Space with elements = {zip(low, high)}")
+    return env
+
+
+class FlattenObsWrapper(gym.ObservationWrapper):
+    """
+    Simple wrapper that flattens an image observation
+    into a state vector when CNNs are overkill.
+    """
+
+    def __init__(self, env):
+        super().__init__(env)
+        self.observation_space.shape = (np.prod(env.observation_space.shape),)
+
+    def observation(self, obs):
+        return obs.flatten()
+
+
+class ConcatObsWrapper(gym.ObservationWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        obs_space_shape = sum(x.shape[0] for x in self.observation_space)
+        self.observation_space.shape = (obs_space_shape,)
+
+    def observation(self, obs):
+        return np.concatenate(obs, axis=0)
+
+
+def highway_env(env_id):
+    """
+    Convenience function to turn all the highway_env
+    environments into continuous control tasks.
+
+    highway_env: https://highway-env.readthedocs.io/en/latest/index.html
+    """
+    import gym
+    import highway_env
+
+    env = gym.make(env_id)
+    env.configure({"action": {"type": "ContinuousAction"}})
+    env.reset()
+    env = NormalizeContinuousActionSpace(env)
+    env = FlattenObsWrapper(env)
+    return env
+
+
 class DiscreteActionWrapper(gym.ActionWrapper):
     """
     This is intended to let the action be any scalar

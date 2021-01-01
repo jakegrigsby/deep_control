@@ -276,6 +276,8 @@ class ReplayBuffer:
             return torch.uint8
         elif dtype in [float, np.float32, np.float64, torch.float32, torch.float64]:
             return torch.float32
+        elif dtype in ["int32", np.int32]:
+            return torch.int32
         else:
             raise ValueError(f"Uncreocgnized replay buffer dtype: {dtype}")
 
