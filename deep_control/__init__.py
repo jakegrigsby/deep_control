@@ -14,4 +14,5 @@ from . import (
     tsr_caql,
     discor,
     sunrise,
+    sbc,
 )
