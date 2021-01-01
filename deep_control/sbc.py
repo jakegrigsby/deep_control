@@ -95,7 +95,6 @@ def sbc(
     save_to_disk=True,
     log_to_disk=True,
     verbosity=0,
-    infinite_bootstrap=True,
     **kwargs,
 ):
     """
@@ -180,7 +179,7 @@ def learn_sbc(
         # maximize the probability that the agent takes the demonstration's action in this state
         dist = actor(state_batch)
         logp_demo_act = dist.log_prob(action_batch).sum(-1, keepdim=True)
-        actor_loss = -logp_demo_act.mean()
+        actor_loss += -logp_demo_act.mean()
 
     # actor gradient step
     actor_optimizer.zero_grad()
