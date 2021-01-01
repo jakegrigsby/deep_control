@@ -301,6 +301,16 @@ class ReplayBuffer:
     def get_all_transitions(self):
         return self._storage.get_all_transitions()
 
+    def load_experience(self, s, a, r, s1, d):
+        assert (
+            s.shape[0] <= self._maxsize
+        ), "Experience dataset is larger than the buffer."
+        if len(r.shape) < 2:
+            r = np.expand_dims(r, 1)
+        if len(d.shape) < 2:
+            d = np.expand_dims(d, 1)
+        self.push(s, a, r, s1, d)
+
 
 class PrioritizedReplayBuffer(ReplayBuffer):
     def __init__(
