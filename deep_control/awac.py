@@ -431,5 +431,5 @@ def add_args(parser):
         "--adv_method",
         type=str,
         default="binary",
-        help="Approach for adjusting advantage weights. Choices include {None, 'normalized', 'clamp', 'binary'}.",
+        help="Approach for adjusting advantage weights. Choices include {None, 'normalized', 'exp', 'binary'}.",
     )
