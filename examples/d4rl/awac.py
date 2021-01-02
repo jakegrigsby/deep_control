@@ -9,7 +9,8 @@ import deep_control as dc
 
 def train_d4rl_awac(args):
     train_env, test_env = gym.make(args.env_id), gym.make(args.env_id)
-    test_env.seed(args.seed); train_env.seed(args.seed)
+    test_env.seed(args.seed)
+    train_env.seed(args.seed)
     state_space = test_env.observation_space
     action_space = test_env.action_space
 
@@ -40,7 +41,9 @@ def train_d4rl_awac(args):
     )
 
     # run awac
-    dc.awac.awac(agent=agent, train_env=train_env, test_env=test_env, buffer=buffer, **vars(args))
+    dc.awac.awac(
+        agent=agent, train_env=train_env, test_env=test_env, buffer=buffer, **vars(args)
+    )
 
 
 if __name__ == "__main__":
