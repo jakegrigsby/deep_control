@@ -92,6 +92,14 @@ Description: A simple approach to offline RL that trains the actor network to em
 Code: `deep_control.sbc`
 Examples: `examples/d4rl/sbc.py`
 
+#### Advantage Weighted Actor Critic (AWAC)
+Paper: [Accelerating Online Reinforcement Learning with Offline Datasets](https://arxiv.org/abs/2006.09359), Nair et al., 2020.
+
+Description: TD3 with a stochastic policy and a modified actor update that makes better use of offline experience before finetuning in the online environment.
+
+Code: `deep_control.awac`
+Examples: `examples/d4rl/awac.py`
+
 #### Model Based Policy Optimization (MBPO)
 Paper: [When to Trust Your Model: Model-Based Policy Optimization](https://arxiv.org/abs/1906.08253), Janner et al., 2019.
 

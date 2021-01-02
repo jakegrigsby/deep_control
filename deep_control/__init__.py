@@ -15,4 +15,5 @@ from . import (
     discor,
     sunrise,
     sbc,
+    awac,
 )
