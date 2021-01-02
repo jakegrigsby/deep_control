@@ -47,7 +47,7 @@ def awac(
     batch_size=1024,
     tau=0.005,
     lambda_temp=1.0,
-    adv_method=None,
+    adv_method="binary",
     actor_lr=1e-4,
     critic_lr=1e-4,
     gamma=0.99,
@@ -184,7 +184,7 @@ def learn_awac(
     actor_clip,
     update_policy=True,
     lambda_temp=1.0,
-    adv_method=None,
+    adv_method="binary",
 ):
     per = isinstance(buffer, replay.PrioritizedReplayBuffer)
     if per:
@@ -248,21 +248,20 @@ def learn_awac(
             )
             adv = q - val
             # there are several heuristics for dealing with the adv values
-            # mentioned in the paper and floating around on GitHub.
+            # mentioned in the paper and floating around on GitHub. I have evaluated
+            # them on the d4rl gym tasks and there does not seem to be a meaningful
+            # difference. the default is binary because it is the most intuitive.
             if adv_method == "normalize":
                 # The importance of each update is in (0, 1) and sums to 1.
                 # reweight by total batch size. Use lambda as a softmax temperature.
                 adv = batch_size * F.softmax(adv / lambda_temp, dim=0)
-            elif adv_method == "clamp-exp":
-                # clamp the advantages in a reasonable range and then exp with lambda
-                # as in the paper.
-                adv = (adv.clamp(-5.0, 1.0) / lambda_temp).exp()
             elif adv_method == "exp":
-                # baseline exponential as shown in the paper.
-                adv = (adv / lambda_temp).exp()
+                # clamp the advantages in a reasonable range and then exp with lambda
+                # as in the paper. Early tests show the clamp is very helpful.
+                adv = (adv.clamp(-5.0, 1.0) / lambda_temp).exp()
             elif adv_method == "binary":
                 # only use transitions with positive advantage, similar to CRR.
-                adv = (adv > 0.0).float() / lambda_temp
+                adv = (adv >= 0.0).float() / lambda_temp
         logp_a = dist.log_prob(action_batch).sum(-1, keepdim=True)
         actor_loss = -(logp_a * adv).mean()
 
@@ -431,6 +430,6 @@ def add_args(parser):
     parser.add_argument(
         "--adv_method",
         type=str,
-        default=None,
-        help="Approach for adjusting advantage weights. Choices include {None, 'normalized', 'clamp-exp', 'exp', 'binary'}.",
+        default="binary",
+        help="Approach for adjusting advantage weights. Choices include {None, 'normalized', 'clamp', 'binary'}.",
     )
