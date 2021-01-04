@@ -51,11 +51,8 @@ class AWACAgent(sac.SACAgent):
                 state_ = state.repeat(self._cwp_n, 1)
                 # get Q(s, a_j) for a_j in "n" candidate actions
                 q_vals = torch.min(self.critic1(state_, act_choices), self.critic2(state_, act_choices))
-                # the weight for each action is exp((Q(s, a_j) / Beta))
-                weights = (q_vals / self._cwp_beta).exp()
-                # normalize the weights into probabilities
-                probs = F.softmax(weights, dim=0).squeeze(1)
-                # sample from the probabilities and use the chosen action
+                # sample from the q-based probs and use the chosen action
+                probs = F.softmax(q_vals / self._cwp_beta, dim=0).squeeze(1)
                 chosen_act_idx = pyd.categorical.Categorical(probs).sample()
                 act = act_choices[chosen_act_idx].unsqueeze(0)
         self.actor.train()

@@ -92,10 +92,10 @@ Description: A simple approach to offline RL that trains the actor network to em
 Code: `deep_control.sbc`
 Examples: `examples/d4rl/sbc.py`
 
-#### Advantage Weighted Actor Critic (AWAC)
-Paper: [Accelerating Online Reinforcement Learning with Offline Datasets](https://arxiv.org/abs/2006.09359), Nair et al., 2020.
+#### Advantage Weighted Actor Critic (AWAC) and Critic Regularized Regression (CRR)
+Paper: [Accelerating Online Reinforcement Learning with Offline Datasets](https://arxiv.org/abs/2006.09359), Nair et al., 2020. & [Critic Regularized Regression](https://arxiv.org/abs/2006.15134), Wang et al., 2020.
 
-Description: TD3 with a stochastic policy and a modified actor update that makes better use of offline experience before finetuning in the online environment.
+Description: TD3 with a stochastic policy and a modified actor update that makes better use of offline experience before finetuning in the online environment. The current implementation is a mix between AWAC and CRR. We allow for online finetuning and use standard critic networks as in AWAC, but add the Critic Weighted Policy, binary advantage function, and max/mean advantage estimates from CRR.
 
 Code: `deep_control.awac`
 Examples: `examples/d4rl/awac.py`
