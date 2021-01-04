@@ -8,6 +8,7 @@ import numpy as np
 import tensorboardX
 import torch
 import torch.nn.functional as F
+import torch.distributions as pyd
 import tqdm
 
 from . import envs, nets, replay, run, utils, device, sac
@@ -20,6 +21,8 @@ class AWACAgent(sac.SACAgent):
         act_space_size,
         log_std_low,
         log_std_high,
+        critic_weighted_policy_n=4,
+        critic_weighted_policy_beta=1.,
         actor_net_cls=nets.StochasticActor,
         critic_net_cls=nets.BigCritic,
     ):
@@ -32,6 +35,33 @@ class AWACAgent(sac.SACAgent):
             critic_net_cls,
         )
         self.actor.dist_impl = "simple"
+        self._cwp_n = critic_weighted_policy_n
+        self._cwp_beta = critic_weighted_policy_beta
+
+    def forward(self, state, from_cpu=True):
+        if from_cpu: state = self.process_state(state)
+        self.actor.eval()
+        with torch.no_grad():
+            act_dist = self.actor(state)
+            if self._cwp_n == None:
+                act = act_dist.mean
+            else:
+                # "Critic Weighted Policy" (CRR Paper Sec 3.2)
+                act_choices = torch.stack([act_dist.sample().squeeze(0) for _ in range(self._cwp_n)], dim=0)
+                state_ = state.repeat(self._cwp_n, 1)
+                # get Q(s, a_j) for a_j in "n" candidate actions
+                q_vals = torch.min(self.critic1(state_, act_choices), self.critic2(state_, act_choices))
+                # the weight for each action is exp((Q(s, a_j) / Beta))
+                weights = (q_vals / self._cwp_beta).exp()
+                # normalize the weights into probabilities
+                probs = F.softmax(weights, dim=0).squeeze(1)
+                # sample from the probabilities and use the chosen action
+                chosen_act_idx = pyd.categorical.Categorical(probs).sample()
+                act = act_choices[chosen_act_idx].unsqueeze(0)
+        self.actor.train()
+        if from_cpu: act = self.process_act(act)
+        return act
+
 
 
 def awac(
@@ -46,8 +76,10 @@ def awac(
     max_episode_steps=100_000,
     batch_size=1024,
     tau=0.005,
-    lambda_temp=1.0,
-    adv_method="binary",
+    beta=1.,
+    crr_function="binary",
+    adv_method="max",
+    adv_method_n=4,
     actor_lr=1e-4,
     critic_lr=1e-4,
     gamma=0.99,
@@ -145,8 +177,10 @@ def awac(
                 critic_clip=critic_clip,
                 actor_clip=actor_clip,
                 update_policy=step % actor_delay == 0,
-                lambda_temp=lambda_temp,
+                beta=beta,
+                crr_function=crr_function,
                 adv_method=adv_method,
+                adv_method_n=adv_method_n,
             )
 
             # move target model towards training model
@@ -183,8 +217,10 @@ def learn_awac(
     critic_clip,
     actor_clip,
     update_policy=True,
-    lambda_temp=1.0,
-    adv_method="binary",
+    beta=1.0,
+    crr_function="binary",
+    adv_method="max",
+    adv_method_n=4,
 ):
     per = isinstance(buffer, replay.PrioritizedReplayBuffer)
     if per:
@@ -237,31 +273,39 @@ def learn_awac(
         ##################
         dist = agent.actor(state_batch)
         with torch.no_grad():
-            agent_actions = dist.sample()
-            val = torch.min(
-                agent.critic1(state_batch, agent_actions),
-                agent.critic2(state_batch, agent_actions),
-            )
+            # generate n candidate actions
+            agent_actions = [dist.sample() for _ in range(adv_method_n)]
+            # evaluate the value of each sampled action
+            val = torch.stack([torch.min(
+                agent.critic1(state_batch, agent_actions[i]),
+                agent.critic2(state_batch, agent_actions[i]),
+            ) for i in range(adv_method_n)
+            ], dim=0)
+            # use the sampled q values to form an estimate of the value function
+            if adv_method == "max":
+                # use the highest q value to get a pessimistic adv estimate
+                val = val.max(0).values
+            elif adv_method == "mean":
+                # use the mean val
+                val = val.mean(0)
+            # compute value of the offline actions
             q = torch.min(
                 agent.critic1(state_batch, action_batch),
                 agent.critic2(state_batch, action_batch),
             )
+            # compare the offline actions to the value to get the advantage
             adv = q - val
-            # there are several heuristics for dealing with the adv values
-            # mentioned in the paper and floating around on GitHub. I have evaluated
-            # them on the d4rl gym tasks and there does not seem to be a meaningful
-            # difference. the default is binary because it is the most intuitive.
-            if adv_method == "normalize":
+            if crr_function == "normalize":
                 # The importance of each update is in (0, 1) and sums to 1.
-                # reweight by total batch size. Use lambda as a softmax temperature.
-                adv = batch_size * F.softmax(adv / lambda_temp, dim=0)
-            elif adv_method == "exp":
-                # clamp the advantages in a reasonable range and then exp with lambda
+                # reweight by total batch size. Use beta as a softmax temperature.
+                adv = batch_size * F.softmax(adv / beta, dim=0)
+            elif crr_function == "exp":
+                # clamp the advantages in a reasonable range and then exp with beta
                 # as in the paper. Early tests show the clamp is very helpful.
-                adv = (adv.clamp(-5.0, 1.0) / lambda_temp).exp()
-            elif adv_method == "binary":
-                # only use transitions with positive advantage, similar to CRR.
-                adv = (adv >= 0.0).float() / lambda_temp
+                adv = (adv.clamp(-5.0, 1.0) / beta).exp()
+            elif crr_function == "binary":
+                # only use transitions with positive advantage.
+                adv = (adv >= 0.0).float()
         logp_a = dist.log_prob(action_batch).sum(-1, keepdim=True)
         actor_loss = -(logp_a * adv).mean()
 
@@ -422,14 +466,27 @@ def add_args(parser):
         help="Upper bound for log std of action distribution.",
     )
     parser.add_argument(
-        "--lambda_temp",
+        "--beta",
         type=float,
         default=1.0,
-        help="Lambda variable from AWAC actor update",
+        help="Lambda variable from AWAC actor update and Beta from CRR",
     )
     parser.add_argument(
-        "--adv_method",
+        "--crr_function",
         type=str,
         default="binary",
         help="Approach for adjusting advantage weights. Choices include {None, 'normalized', 'exp', 'binary'}.",
     )
+    parser.add_argument(
+        "--adv_method",
+        type=str,
+        default="max",
+        help="Approach for estimating the advantage function. Choices include {'max', 'mean'}.",
+    )
+    parser.add_argument(
+        "--adv_method_n",
+        type=int,
+        default=4,
+        help="How many actions to sample from the policy when estimating the advantage. CRR uses 4.",
+    )
+    
