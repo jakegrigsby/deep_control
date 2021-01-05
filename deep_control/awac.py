@@ -21,8 +21,6 @@ class AWACAgent(sac.SACAgent):
         act_space_size,
         log_std_low,
         log_std_high,
-        critic_weighted_policy_n=4,
-        critic_weighted_policy_beta=1.,
         actor_net_cls=nets.StochasticActor,
         critic_net_cls=nets.BigCritic,
     ):
@@ -35,30 +33,6 @@ class AWACAgent(sac.SACAgent):
             critic_net_cls,
         )
         self.actor.dist_impl = "simple"
-        self._cwp_n = critic_weighted_policy_n
-        self._cwp_beta = critic_weighted_policy_beta
-
-    def forward(self, state, from_cpu=True):
-        if from_cpu: state = self.process_state(state)
-        self.actor.eval()
-        with torch.no_grad():
-            act_dist = self.actor(state)
-            if self._cwp_n == None:
-                act = act_dist.mean
-            else:
-                # "Critic Weighted Policy" (CRR Paper Sec 3.2)
-                act_choices = torch.stack([act_dist.sample().squeeze(0) for _ in range(self._cwp_n)], dim=0)
-                state_ = state.repeat(self._cwp_n, 1)
-                # get Q(s, a_j) for a_j in "n" candidate actions
-                q_vals = torch.min(self.critic1(state_, act_choices), self.critic2(state_, act_choices))
-                # sample from the q-based probs and use the chosen action
-                probs = F.softmax(q_vals / self._cwp_beta, dim=0).squeeze(1)
-                chosen_act_idx = pyd.categorical.Categorical(probs).sample()
-                act = act_choices[chosen_act_idx].unsqueeze(0)
-        self.actor.train()
-        if from_cpu: act = self.process_act(act)
-        return act
-
 
 
 def awac(
@@ -486,4 +460,3 @@ def add_args(parser):
         default=4,
         help="How many actions to sample from the policy when estimating the advantage. CRR uses 4.",
     )
-    

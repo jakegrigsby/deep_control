@@ -20,8 +20,6 @@ def train_d4rl_awac(args):
         action_space.shape[0],
         args.log_std_low,
         args.log_std_high,
-        critic_weighted_policy_n=args.adv_method_n,
-        critic_weighted_policy_beta=args.beta,
     )
 
     # get offline datset
