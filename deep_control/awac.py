@@ -47,7 +47,7 @@ def awac(
     max_episode_steps=100_000,
     batch_size=1024,
     tau=0.005,
-    beta=1.,
+    beta=1.0,
     crr_function="binary",
     adv_method="max",
     adv_method_n=4,
@@ -247,11 +247,16 @@ def learn_awac(
             # generate n candidate actions
             agent_actions = [dist.sample() for _ in range(adv_method_n)]
             # evaluate the value of each sampled action
-            val = torch.stack([torch.min(
-                agent.critic1(state_batch, agent_actions[i]),
-                agent.critic2(state_batch, agent_actions[i]),
-            ) for i in range(adv_method_n)
-            ], dim=0)
+            val = torch.stack(
+                [
+                    torch.min(
+                        agent.critic1(state_batch, agent_actions[i]),
+                        agent.critic2(state_batch, agent_actions[i]),
+                    )
+                    for i in range(adv_method_n)
+                ],
+                dim=0,
+            )
             # use the sampled q values to form an estimate of the value function
             if adv_method == "max":
                 # use the highest q value to get a pessimistic adv estimate
