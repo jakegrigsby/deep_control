@@ -1,4 +1,5 @@
 import random
+import os
 
 import torch
 import torch.nn.functional as F
@@ -246,6 +247,16 @@ class SimpleModelEnsemble(nn.Module):
         for model in self.ensemble:
             transitions_i = self.sample_with_replacement(transitions)
             model.fit(transitions_i, *args, **kwargs)
+
+    def save(self, path):
+        for i, model in enumerate(self.ensemble):
+            model_path = os.path.join(path, f"model_{i}.pt")
+            torch.save(model.state_dict(), model_path)
+
+    def load(self, path):
+        for i, model in enumerate(self.ensemble):
+            model_path = os.path.join(path, f"model_{i}.pt")
+            model.load_state_dict(torch.load(model_path))
 
 
 """

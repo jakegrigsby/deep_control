@@ -251,6 +251,14 @@ class ReplayBufferStorage:
         done = self.done_stack[indices]
         return (state, action, reward, next_state, done)
 
+    def __setitem__(self, indices, experience):
+        s, a, r, s1, d = experience
+        self.s_stack[indices] = s.float()
+        self.action_stack[indices] = a.float()
+        self.reward_stack[indices] = r
+        self.s1_stack[indices] = s1.float()
+        self.done_stack[indices] = d
+
     def get_all_transitions(self):
         return (
             self.s_stack[: self._max_filled],
@@ -282,7 +290,7 @@ class ReplayBuffer:
             raise ValueError(f"Uncreocgnized replay buffer dtype: {dtype}")
 
     def __len__(self):
-        return len(self._storage)
+        return len(self._storage) if self._storage is not None else 0
 
     def push(self, state, action, reward, next_state, done):
         if self._storage is None:
@@ -294,9 +302,12 @@ class ReplayBuffer:
             )
         return self._storage.add(state, action, reward, next_state, done)
 
-    def sample(self, batch_size):
+    def sample(self, batch_size, get_idxs=False):
         random_idxs = torch.randint(len(self._storage), (batch_size,))
-        return self._storage[random_idxs]
+        if get_idxs:
+            return self._storage[random_idxs], random_idxs
+        else:
+            return self._storage[random_idxs]
 
     def get_all_transitions(self):
         return self._storage.get_all_transitions()
