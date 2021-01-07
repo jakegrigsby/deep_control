@@ -31,30 +31,26 @@ class DynamicsModel(LightningModule):
         raise NotImplementedError
 
     def training_step(self, batch, batch_idx):
-        """
-        The network is minimizing the MSE between
-        the predicted next state and the true next state,
-        according to the real transitions. It also has to
-        predict the reward and whether this transition ended
-        the episode. Right now, I'm just adding those three losses
-        up, but this is a bit of an open question because
-        many of the papers in this area only learn the state dynamics
-        and not the rewards or dones...
-        """
         s, a, r, s1, d = batch
         pred_s1_del_mean, pred_s1_del_log_var, pred_r, pred_d = self(s, a)
         d_loss = F.binary_cross_entropy(pred_d, d)
         r_loss = F.mse_loss(pred_r, r)
 
         s1_targets = s1 - s
-        inv_var = (-pred_s1_del_log_var).exp()
-        s_loss = ((pred_s1_del_mean - s1_targets) ** 2 * inv_var).mean()
-        s_loss += pred_s1_del_log_var.mean()
-        s_loss += 0.01 * self.max_logvar.sum() - 0.01 * self.min_logvar.sum()
+        s_loss = self._compute_state_loss(
+            pred_s1_del_mean, pred_s1_del_log_var, s1_targets
+        )
 
         loss = d_loss + s_loss + r_loss
-
         return {"loss": loss, "log": {"train_loss": loss}}
+
+    def _compute_state_loss(self, pred_s1_del_mean, pred_s1_del_log_var, s1_targets):
+        inv_var = (-pred_s1_del_log_var).exp()
+        deltas = pred_s1_del_mean - s1_targets
+        s_loss = (deltas ** 2 * inv_var).sum(-1) + pred_s1_del_log_var.sum(-1)
+        s_loss = s_loss.mean()
+        s_loss += 0.01 * self.max_logvar.sum() - 0.01 * self.min_logvar.sum()
+        return s_loss
 
     def validation_step(self, batch, batch_idx):
         s, a, r, s1, d = batch
@@ -63,10 +59,9 @@ class DynamicsModel(LightningModule):
         r_loss = F.mse_loss(pred_r, r)
 
         s1_targets = s1 - s
-        inv_var = (-pred_s1_del_log_var).exp()
-        s_loss = ((pred_s1_del_mean - s1_targets) ** 2 * inv_var).mean()
-        s_loss += pred_s1_del_log_var.mean()
-        s_loss += 0.01 * self.max_logvar.sum() - 0.01 * self.min_logvar.sum()
+        s_loss = self._compute_state_loss(
+            pred_s1_del_mean, pred_s1_del_log_var, s1_targets
+        )
 
         loss = d_loss + s_loss + r_loss
 
@@ -171,7 +166,7 @@ class SimpleFeedForwardModel(DynamicsModel):
     """
     This is a baseline dynamics model. It's a simple
     feedforward network that takes in the current state
-    and action and outputs a prediction for the next state,
+    and action and outputs a prediction for the *change in the state*,
     the reward and the done bool of that transition.
     """
 
@@ -257,133 +252,3 @@ class SimpleModelEnsemble(nn.Module):
         for i, model in enumerate(self.ensemble):
             model_path = os.path.join(path, f"model_{i}.pt")
             model.load_state_dict(torch.load(model_path))
-
-
-"""
-from blitz.modules import BayesianLinear
-from blitz.utils import variational_estimator
-
-def swish(x):
-    return x * torch.sigmoid(x)
-
-
-@variational_estimator
-class BNN(DynamicsModel):
-    def __init__(self, obs_dim, act_dim):
-        super().__init__()
-        self.obs_dim = obs_dim
-        self.act_dim = act_dim
-
-        self.bl1 = BayesianLinear(obs_dim + act_dim, 200)
-        self.bl2 = BayesianLinear(200, 200)
-        self.bl3 = BayesianLinear(200, 200)
-        self.next_state_delta_bl = BayesianLinear(200, obs_dim)
-        self.reward_bl = BayesianLinear(200, 1)
-        self.done_bl = BayesianLinear(200, 1)
-
-    def compute_loss(self, outputs, labels):
-        pred_next_state, pred_reward, pred_done = outputs
-        next_state, reward, done = labels
-        loss = (
-            F.binary_cross_entropy(pred_done, done)
-            + F.mse_loss(pred_next_state, next_state)
-            + F.mse_loss(pred_reward, reward)
-        )
-        return loss
-
-    def forward(self, state_action, dummy_action=None):
-        if dummy_action is None:
-            state, action = state_action
-        else:
-            state, action = state_action, dummy_action
-        state = (state - self._state_mean) / (self._state_var + 1e-5)
-        action = (action - self._action_mean) / (self._action_var + 1e-5)
-        x = torch.cat((state, action), dim=1)
-        x = swish(self.bl1(x))
-        x = swish(self.bl2(x))
-        x = swish(self.bl3(x))
-        next_state = state + self.next_state_delta_bl(x)
-        reward = self.reward_bl(x)
-        done = torch.sigmoid(self.done_bl(x))
-        return next_state, reward, done
-
-    def training_step(self, batch, batch_idx):
-        s, a, r, s1, d = batch
-        loss = self.sample_elbo(
-            inputs=(s, a),
-            labels=(s1, r, d),
-            criterion=self.compute_loss,
-            sample_nbr=3,
-            complexity_cost_weight=1 / len(self._train_dset),
-        )
-        return {"loss": loss, "log": {"train_loss": loss}}
-
-    def validation_step(self, batch, batch_idx):
-        s, a, r, s1, d = batch
-        pred_next_states, pred_rews, pred_dones = [], [], []
-        for sample in range(10):
-            pred_next_state, pred_rew, pred_done = self((s, a))
-            pred_next_states.append(pred_next_state)
-            pred_rews.append(pred_rew)
-            pred_dones.append(pred_done)
-        mean_pred_next_state = torch.stack(pred_next_states).mean(0)
-        mean_pred_rew = torch.stack(pred_rews).mean(0)
-        mean_pred_done = torch.stack(pred_dones).mean(0)
-
-        d_loss = F.binary_cross_entropy(mean_pred_done, d)
-        s_loss = F.mse_loss(mean_pred_next_state, s1)
-        r_loss = F.mse_loss(mean_pred_rew, r)
-        loss = d_loss + s_loss + r_loss
-
-        return {
-            "val_loss": loss,
-            "done_loss": d_loss,
-            "state_loss": s_loss,
-            "rew_loss": r_loss,
-        }
-
-class StochasticModelEnsemble(nn.Module):
-    def __init__(self, ensemble):
-        super().__init__()
-        self.ensemble = ensemble
-
-    def forward(self, state, action, stochastic=True):
-        pred_next_states = []
-        pred_rews = []
-        pred_dones = []
-        for model in self.ensemble:
-            next_state, rew, done = model(state, action)
-            pred_next_states.append(next_state.unsqueeze(0))
-            pred_rews.append(rew.unsqueeze(0))
-            pred_dones.append(done.unsqueeze(0))
-        pred_next_states = torch.cat(pred_next_states, dim=0)
-        pred_rews = torch.cat(pred_rews, dim=0)
-        pred_dones = torch.cat(pred_dones, dim=0)
-
-        next_state_std = pred_next_states.std(0)
-        next_state_mean = pred_next_states.mean(0)
-        next_state_dist = pyd.Normal(next_state_mean, next_state_std)
-
-        rew_std = pred_rews.std(0)
-        rew_mean = pred_rews.mean(0)
-        rew_dist = pyd.Normal(rew_mean, rew_std)
-
-        done_std = pred_dones.std(0)
-        done_mean = pred_dones.mean(0)
-        done_dist = pyd.Normal(done_mean, done_std)
-
-        if stochastic:
-            return next_state_dist.sample(), rew_dist.sample(), done_dist.sample()
-        else:
-            return next_state_dist.mean, rew_dist.mean, done_dist.mean
-
-    def to(self, device):
-        for model in self.ensemble:
-            model.to(device)
-
-    def fit(self, *args, **kwargs):
-        # TODO: parallelize this?
-        for model in self.ensemble:
-            model.fit(*args, **kwargs)
-
-"""
