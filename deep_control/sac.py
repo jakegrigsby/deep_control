@@ -24,12 +24,18 @@ class SACAgent:
         log_std_high,
         actor_net_cls=nets.StochasticActor,
         critic_net_cls=nets.BigCritic,
+        hidden_size=1024,
     ):
         self.actor = actor_net_cls(
-            obs_space_size, act_space_size, log_std_low, log_std_high, dist_impl="pyd",
+            obs_space_size,
+            act_space_size,
+            log_std_low,
+            log_std_high,
+            dist_impl="pyd",
+            hidden_size=hidden_size,
         )
-        self.critic1 = critic_net_cls(obs_space_size, act_space_size)
-        self.critic2 = critic_net_cls(obs_space_size, act_space_size)
+        self.critic1 = critic_net_cls(obs_space_size, act_space_size, hidden_size)
+        self.critic2 = critic_net_cls(obs_space_size, act_space_size, hidden_size)
 
     def to(self, device):
         self.actor = self.actor.to(device)

@@ -116,12 +116,13 @@ class StochasticActor(nn.Module):
         act_space_size,
         log_std_low=-10,
         log_std_high=2,
+        hidden_size=1024,
         dist_impl="pyd",
     ):
         super().__init__()
-        self.fc1 = nn.Linear(state_space_size, 1024)
-        self.fc2 = nn.Linear(1024, 1024)
-        self.fc3 = nn.Linear(1024, 2 * act_space_size)
+        self.fc1 = nn.Linear(state_space_size, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, hidden_size)
+        self.fc3 = nn.Linear(hidden_size, 2 * act_space_size)
         self.log_std_low = log_std_low
         self.log_std_high = log_std_high
         self.apply(weight_init)
@@ -149,11 +150,11 @@ class StochasticActor(nn.Module):
 
 
 class BigCritic(nn.Module):
-    def __init__(self, state_space_size, act_space_size):
+    def __init__(self, state_space_size, act_space_size, hidden_size=1024):
         super().__init__()
-        self.fc1 = nn.Linear(state_space_size + act_space_size, 1024)
-        self.fc2 = nn.Linear(1024, 1024)
-        self.fc3 = nn.Linear(1024, 1)
+        self.fc1 = nn.Linear(state_space_size + act_space_size, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, hidden_size)
+        self.fc3 = nn.Linear(hidden_size, 1)
 
         self.apply(weight_init)
 

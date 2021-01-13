@@ -23,6 +23,7 @@ class AWACAgent(sac.SACAgent):
         log_std_high,
         actor_net_cls=nets.StochasticActor,
         critic_net_cls=nets.BigCritic,
+        hidden_size=1024,
     ):
         super().__init__(
             obs_space_size,
@@ -31,6 +32,7 @@ class AWACAgent(sac.SACAgent):
             log_std_high,
             actor_net_cls,
             critic_net_cls,
+            hidden_size=hidden_size,
         )
         self.actor.dist_impl = "simple"
 

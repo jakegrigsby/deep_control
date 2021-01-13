@@ -20,6 +20,7 @@ class SBCAgent:
         log_std_high,
         ensemble_size=5,
         actor_net_cls=nets.StochasticActor,
+        hidden_size=1024,
     ):
         self.actors = [
             actor_net_cls(
@@ -28,6 +29,7 @@ class SBCAgent:
                 log_std_low,
                 log_std_high,
                 dist_impl="simple",
+                hidden_size=hidden_size,
             )
             for _ in range(ensemble_size)
         ]
@@ -278,4 +280,7 @@ def add_args(parser):
     )
     parser.add_argument(
         "--ensemble_size", type=int, default=5, help="actor ensemble size",
+    )
+    parser.add_argument(
+        "--hidden_size", type=int, default=1024, help="actor network hidden dim",
     )
