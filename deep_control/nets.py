@@ -120,13 +120,13 @@ class StochasticActor(nn.Module):
         dist_impl="pyd",
     ):
         super().__init__()
+        assert dist_impl in ["pyd", "simple", "beta"]
         self.fc1 = nn.Linear(state_space_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.fc3 = nn.Linear(hidden_size, 2 * act_space_size)
         self.log_std_low = log_std_low
         self.log_std_high = log_std_high
         self.apply(weight_init)
-        assert dist_impl in ["pyd", "simple"]
         self.dist_impl = dist_impl
 
     def forward(self, state):
@@ -146,6 +146,10 @@ class StochasticActor(nn.Module):
             std = log_std.exp()
             base_dist = pyd.Normal(mu, std)
             dist = SimpleSquashedNormal(base_dist)
+        elif self.dist_impl == "beta":
+            out = 1.0 + F.softplus(out)
+            alpha, beta = out.chunk(2, dim=1)
+            dist = BetaDist(alpha, beta)
         return dist
 
 
@@ -166,11 +170,11 @@ class BigCritic(nn.Module):
 
 
 class BaselineActor(nn.Module):
-    def __init__(self, state_size, action_size):
+    def __init__(self, state_size, action_size, hidden_size=400):
         super().__init__()
-        self.fc1 = nn.Linear(state_size, 400)
-        self.fc2 = nn.Linear(400, 300)
-        self.out = nn.Linear(300, action_size)
+        self.fc1 = nn.Linear(state_size, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, hidden_size)
+        self.out = nn.Linear(hidden_size, action_size)
 
     def forward(self, state):
         x = F.relu(self.fc1(state))
@@ -192,6 +196,40 @@ class BaselineCritic(nn.Module):
         x = F.relu(self.fc2(x))
         val = self.out(x)
         return val
+
+
+class BetaDist(pyd.transformed_distribution.TransformedDistribution):
+    class _BetaDistTransform(pyd.transforms.Transform):
+        domain = pyd.constraints.real
+        codomain = pyd.constraints.interval(-1.0, 1.0)
+
+        def __init__(self, cache_size=1):
+            super().__init__(cache_size=cache_size)
+
+        def __eq__(self, other):
+            return isinstance(other, _BetaDistTransform)
+
+        def _inverse(self, y):
+            return (y.clamp(-0.999, 0.999) + 1.0) / 2.0
+
+        def _call(self, x):
+            return (2.0 * x) - 1.0
+
+        def log_abs_det_jacobian(self, x, y):
+            # return log det jacobian |dy/dx| given input and output
+            return torch.Tensor([math.log(2.0)]).to(x.device)
+
+    def __init__(self, alpha, beta):
+        self.base_dist = pyd.beta.Beta(alpha, beta)
+        transforms = [self._BetaDistTransform()]
+        super().__init__(self.base_dist, transforms)
+
+    @property
+    def mean(self):
+        mu = self.base_dist.mean
+        for tr in self.transforms:
+            mu = tr(mu)
+        return mu
 
 
 """
@@ -260,11 +298,11 @@ class GracBaselineActor(nn.Module):
 
 
 class BaselineDiscreteActor(nn.Module):
-    def __init__(self, obs_shape, action_size):
+    def __init__(self, obs_shape, action_size, hidden_size=300):
         super().__init__()
-        self.fc1 = nn.Linear(obs_shape, 400)
-        self.fc2 = nn.Linear(400, 300)
-        self.act_p = nn.Linear(300, action_size)
+        self.fc1 = nn.Linear(obs_shape, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, hidden_size)
+        self.act_p = nn.Linear(hidden_size, action_size)
 
     def forward(self, state):
         x = F.relu(self.fc1(state))
@@ -275,11 +313,11 @@ class BaselineDiscreteActor(nn.Module):
 
 
 class BaselineDiscreteCritic(nn.Module):
-    def __init__(self, obs_shape, action_shape):
+    def __init__(self, obs_shape, action_shape, hidden_size=300):
         super().__init__()
-        self.fc1 = nn.Linear(obs_shape, 400)
-        self.fc2 = nn.Linear(400, 300)
-        self.out = nn.Linear(300, action_shape)
+        self.fc1 = nn.Linear(obs_shape, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, hidden_size)
+        self.out = nn.Linear(hidden_size, action_shape)
 
     def forward(self, state):
         x = F.relu(self.fc1(state))
