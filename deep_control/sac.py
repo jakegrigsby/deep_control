@@ -583,17 +583,15 @@ def learn_discrete(
     alpha = torch.exp(log_alpha)
     with torch.no_grad():
         # create critic targets (clipped double Q learning)
-        action_dist_s1 = agent.actor(next_state_batch)
-        action_s1 = action_dist_s1.sample()
-        logp_a1 = action_dist_s1.log_prob(action_s1).unsqueeze(1)
+        action_dist_s1 = agent.actor(next_state_batch).probs
         target_value_s1 = (
-            logp_a1.exp()
+            action_dist_s1
             * (
                 torch.min(
                     target_agent.critic1(next_state_batch),
                     target_agent.critic2(next_state_batch),
                 )
-                - (alpha * logp_a1)
+                - (alpha * torch.log(action_dist_s1))
             )
         ).sum(1, keepdim=True)
         td_target = reward_batch + gamma * (1.0 - done_batch) * (target_value_s1)
@@ -619,17 +617,10 @@ def learn_discrete(
         ##################
         ## ACTOR UPDATE ##
         ##################
-        agent_action_dist = agent.actor(state_batch)
-        agent_actions = agent_action_dist.sample()
-        logp_a = agent_action_dist.log_prob(agent_actions).unsqueeze(1)
+        prob_a = agent.actor(state_batch).probs
+        vals = torch.min(agent.critic1(state_batch), agent.critic2(state_batch))
         actor_loss = (
-            (
-                logp_a.exp()
-                * (
-                    (alpha.detach() * logp_a)
-                    - torch.min(agent.critic1(state_batch), agent.critic2(state_batch))
-                )
-            )
+            (prob_a * (alpha.detach() * torch.log(prob_a)) * -vals)
             .sum(1, keepdim=True)
             .mean()
         )
@@ -642,11 +633,11 @@ def learn_discrete(
         ##################
         ## ALPHA UPDATE ##
         ##################
-        alpha_loss = torch.sum(
-            logp_a.exp().detach() * (-alpha * (logp_a.detach() + target_entropy)),
-            dim=-1,
-            keepdim=True,
-        ).mean()
+        alpha_loss = (
+            (prob_a.detach() * (-alpha * (torch.log(prob_a.detach()) + target_entropy)))
+            .sum(1, keepdim=True)
+            .mean()
+        )
         log_alpha_optimizer.zero_grad()
         alpha_loss.backward()
         log_alpha_optimizer.step()
