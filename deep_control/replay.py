@@ -305,7 +305,7 @@ class ReplayBuffer:
     def sample(self, batch_size, get_idxs=False):
         random_idxs = torch.randint(len(self._storage), (batch_size,))
         if get_idxs:
-            return self._storage[random_idxs], random_idxs
+            return self._storage[random_idxs], random_idxs.cpu().numpy()
         else:
             return self._storage[random_idxs]
 
@@ -364,6 +364,9 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         weights = (p_sample * len(self._storage)) ** (-self.beta) / max_weight
         return self._storage[idxes], torch.from_numpy(weights), idxes
 
+    def sample_uniform(self, batch_size):
+        return super().sample(batch_size, get_idxs=True)
+
     def update_priorities(self, idxes, priorities):
         assert len(idxes) == len(priorities)
         assert np.min(priorities) > 0
@@ -371,4 +374,68 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         assert np.max(idxes) < len(self._storage)
         self._it_sum[idxes] = priorities ** self.alpha
         self._it_min[idxes] = priorities ** self.alpha
+        self._max_priority = max(self._max_priority, np.max(priorities))
+
+
+class MultiPriorityBuffer(ReplayBuffer):
+    def __init__(
+        self,
+        size,
+        trees,
+        state_shape,
+        action_shape,
+        state_dtype=float,
+        alpha=0.6,
+        beta=1.0,
+    ):
+        super(MultiPriorityBuffer, self).__init__(
+            size, state_shape, action_shape, state_dtype
+        )
+        assert alpha >= 0
+        self.alpha = alpha
+        self.beta = beta
+
+        it_capacity = 1
+        while it_capacity < size:
+            it_capacity *= 2
+
+        self.sum_trees = [SumSegmentTree(it_capacity) for _ in range(trees)]
+        self.min_trees = [MinSegmentTree(it_capacity) for _ in range(trees)]
+        self._max_priority = 1.0
+
+    def push(self, s, a, r, s_1, d, priorities=None):
+        R = super().push(s, a, r, s_1, d)
+        if priorities is None:
+            priorities = self._max_priority
+
+        for sum_tree in self.sum_trees:
+            sum_tree[R] = priorities ** self.alpha
+        for min_tree in self.min_trees:
+            min_tree[R] = priorities ** self.alpha
+
+    def _sample_proportional(self, batch_size, tree_num):
+        mass = []
+        total = self.sum_trees[tree_num].sum(0, len(self._storage) - 1)
+        mass = np.random.random(size=batch_size) * total
+        idx = self.sum_trees[tree_num].find_prefixsum_idx(mass)
+        return idx
+
+    def sample(self, batch_size, tree_num):
+        idxes = self._sample_proportional(batch_size, tree_num)
+        p_min = self.min_trees[tree_num].min() / self.sum_trees[tree_num].sum()
+        max_weight = (p_min * len(self._storage)) ** (-self.beta)
+        p_sample = self.sum_trees[tree_num][idxes] / self.sum_trees[tree_num].sum()
+        weights = (p_sample * len(self._storage)) ** (-self.beta) / max_weight
+        return self._storage[idxes], torch.from_numpy(weights), idxes
+
+    def sample_uniform(self, batch_size):
+        return super().sample(batch_size, get_idxs=True)
+
+    def update_priorities(self, idxes, priorities, tree_num):
+        assert len(idxes) == len(priorities)
+        assert np.min(priorities) > 0
+        assert np.min(idxes) >= 0
+        assert np.max(idxes) < len(self._storage)
+        self.sum_trees[tree_num][idxes] = priorities ** self.alpha
+        self.min_trees[tree_num][idxes] = priorities ** self.alpha
         self._max_priority = max(self._max_priority, np.max(priorities))

@@ -36,6 +36,7 @@ class SACAgent:
         )
         self.critic1 = critic_net_cls(obs_space_size, act_space_size, hidden_size)
         self.critic2 = critic_net_cls(obs_space_size, act_space_size, hidden_size)
+        self.log_alpha = None
 
     def to(self, device):
         self.actor = self.actor.to(device)
@@ -424,6 +425,7 @@ def learn_standard(
         log_alpha_optimizer.zero_grad()
         alpha_loss.backward()
         log_alpha_optimizer.step()
+        agent.log_alpha = log_alpha
 
     if per:
         new_priorities = (abs(td_error1) + 1e-5).cpu().detach().squeeze(1).numpy()
@@ -540,6 +542,7 @@ def learn_self_regularized(
         log_alpha_optimizer.zero_grad()
         alpha_loss.backward()
         log_alpha_optimizer.step()
+        agent.log_alpha = log_alpha
 
     if per:
         new_priorities = (abs(td_error1) + 1e-5).cpu().detach().squeeze(1).numpy()
@@ -794,13 +797,13 @@ def add_args(parser):
     parser.add_argument(
         "--log_std_low",
         type=float,
-        default=-10,
+        default=-10.0,
         help="Lower bound for log std of action distribution.",
     )
     parser.add_argument(
         "--log_std_high",
         type=float,
-        default=2,
+        default=2.0,
         help="Upper bound for log std of action distribution.",
     )
     parser.add_argument(

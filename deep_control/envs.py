@@ -24,6 +24,16 @@ class ChannelsFirstWrapper(gym.ObservationWrapper):
         return np.ascontiguousarray(frame)
 
 
+class NormalizeObservationSpace(gym.ObservationWrapper):
+    def __init__(self, env, obs_mean, obs_std):
+        super().__init__(env)
+        self.mean = obs_mean
+        self.std = obs_std + 1e-5
+
+    def observation(self, x):
+        return (x - self.mean) / self.std
+
+
 class NormalizeContinuousActionSpace(gym.ActionWrapper):
     def __init__(self, env):
         super().__init__(env)
@@ -187,7 +197,7 @@ def add_gym_args(parser):
     Add a --env_id cl flag to an argparser
     """
     parser.add_argument("--env_id", type=str, default="Pendulum-v0")
-    parser.add_argument("--seed", type=int, default=231)
+    parser.add_argument("--seed", type=int, default=123)
 
 
 def load_gym(env_id="CartPole-v1", seed=None, normalize_action_space=True, **_):

@@ -20,11 +20,18 @@ class TD3Agent:
         obs_space_size,
         act_space_size,
         actor_net_cls=nets.BaselineActor,
-        critic_net_cls=nets.BaselineCritic,
+        critic_net_cls=nets.BigCritic,
+        hidden_size=256,
     ):
-        self.actor = actor_net_cls(obs_space_size, act_space_size)
-        self.critic1 = critic_net_cls(obs_space_size, act_space_size)
-        self.critic2 = critic_net_cls(obs_space_size, act_space_size)
+        self.actor = actor_net_cls(
+            obs_space_size, act_space_size, hidden_size=hidden_size
+        )
+        self.critic1 = critic_net_cls(
+            obs_space_size, act_space_size, hidden_size=hidden_size
+        )
+        self.critic2 = critic_net_cls(
+            obs_space_size, act_space_size, hidden_size=hidden_size
+        )
 
     def to(self, device):
         self.actor = self.actor.to(device)
@@ -57,13 +64,16 @@ class TD3Agent:
         self.critic1.load_state_dict(torch.load(critic1_path))
         self.critic2.load_state_dict(torch.load(critic2_path))
 
-    def forward(self, state):
-        state = self.process_state(state)
+    def forward(self, state, from_cpu=True):
+        if from_cpu:
+            state = self.process_state(state)
         self.actor.eval()
         with torch.no_grad():
             action = self.actor(state)
         self.actor.train()
-        return self.process_act(action)
+        if from_cpu:
+            action = self.process_act(action)
+        return action
 
     def process_state(self, state):
         return torch.from_numpy(np.expand_dims(state, 0).astype(np.float32)).to(
