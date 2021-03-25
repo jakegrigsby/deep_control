@@ -28,7 +28,7 @@ class SBCAgent:
                 act_space_size,
                 log_std_low,
                 log_std_high,
-                dist_impl="simple",
+                dist_impl="pyd",
                 hidden_size=hidden_size,
             )
             for _ in range(ensemble_size)

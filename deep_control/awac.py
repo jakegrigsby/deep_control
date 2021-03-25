@@ -34,7 +34,7 @@ class AWACAgent(sac.SACAgent):
             critic_net_cls,
             hidden_size=hidden_size,
         )
-        self.actor.dist_impl = "simple"
+        self.actor.dist_impl = "pyd"
 
 
 def awac(

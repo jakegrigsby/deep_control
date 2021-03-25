@@ -33,9 +33,6 @@ class GRACAgent(sac.SACAgent):
             actor_net_cls,
             critic_net_cls,
         )
-        # the standard pytorch_distributions implementation seems
-        # to be too numerically unstable for GRAC's low-prob CEM actions.
-        self.actor.dist_impl = "simple"
         self.cem = critic_searchers.CEM(act_space_size, max_action=1.0)
 
 

@@ -90,25 +90,6 @@ class SmallPixelEncoder(nn.Module):
         return state
 
 
-class SimpleSquashedNormal:
-    def __init__(self, normal_dist):
-        self.dist = normal_dist
-        self.mean = normal_dist.mean
-
-    def sample(self):
-        sample = self.dist.sample()
-        return torch.tanh(sample)
-
-    def rsample(self):
-        sample = self.dist.rsample()
-        return torch.tanh(sample)
-
-    def log_prob(self, action):
-        logp_a = self.dist.log_prob(action)
-        logp_a -= 2 * (np.log(2) - action - F.softplus(-2 * action))
-        return logp_a
-
-
 class StochasticActor(nn.Module):
     def __init__(
         self,
@@ -120,7 +101,7 @@ class StochasticActor(nn.Module):
         dist_impl="pyd",
     ):
         super().__init__()
-        assert dist_impl in ["pyd", "simple", "beta"]
+        assert dist_impl in ["pyd", "beta"]
         self.fc1 = nn.Linear(state_space_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.fc3 = nn.Linear(hidden_size, 2 * act_space_size)
@@ -141,11 +122,6 @@ class StochasticActor(nn.Module):
             ) * (log_std + 1)
             std = log_std.exp()
             dist = SquashedNormal(mu, std)
-        elif self.dist_impl == "simple":
-            log_std = log_std.clamp(self.log_std_low, self.log_std_high)
-            std = log_std.exp()
-            base_dist = pyd.Normal(mu, std)
-            dist = SimpleSquashedNormal(base_dist)
         elif self.dist_impl == "beta":
             out = 1.0 + F.softplus(out)
             alpha, beta = out.chunk(2, dim=1)
@@ -210,7 +186,7 @@ class BetaDist(pyd.transformed_distribution.TransformedDistribution):
             return isinstance(other, _BetaDistTransform)
 
         def _inverse(self, y):
-            return (y.clamp(-0.999, 0.999) + 1.0) / 2.0
+            return (y.clamp(-0.99, 0.99) + 1.0) / 2.0
 
         def _call(self, x):
             return (2.0 * x) - 1.0
@@ -257,7 +233,7 @@ class TanhTransform(pyd.transforms.Transform):
         return x.tanh()
 
     def _inverse(self, y):
-        return self.atanh(y)
+        return self.atanh(y.clamp(-0.99, 0.99))
 
     def log_abs_det_jacobian(self, x, y):
         return 2.0 * (math.log(2.0) - x - F.softplus(-2.0 * x))

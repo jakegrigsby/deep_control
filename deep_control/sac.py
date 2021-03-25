@@ -794,13 +794,13 @@ def add_args(parser):
     parser.add_argument(
         "--log_std_low",
         type=float,
-        default=-10,
+        default=-10.0,
         help="Lower bound for log std of action distribution.",
     )
     parser.add_argument(
         "--log_std_high",
         type=float,
-        default=2,
+        default=2.0,
         help="Upper bound for log std of action distribution.",
     )
     parser.add_argument(
