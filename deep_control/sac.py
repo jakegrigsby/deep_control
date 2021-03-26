@@ -583,15 +583,15 @@ def learn_discrete(
     alpha = torch.exp(log_alpha)
     with torch.no_grad():
         # create critic targets (clipped double Q learning)
-        action_dist_s1 = agent.actor(next_state_batch).probs
+        action_dist_s1 = agent.actor(next_state_batch)
         target_value_s1 = (
-            action_dist_s1
+            action_dist_s1.probs
             * (
                 torch.min(
                     target_agent.critic1(next_state_batch),
                     target_agent.critic2(next_state_batch),
                 )
-                - (alpha * torch.log(action_dist_s1))
+                - (alpha.detach() * action_dist_s1.entropy()).unsqueeze(1)
             )
         ).sum(1, keepdim=True)
         td_target = reward_batch + gamma * (1.0 - done_batch) * (target_value_s1)
@@ -617,13 +617,12 @@ def learn_discrete(
         ##################
         ## ACTOR UPDATE ##
         ##################
-        prob_a = agent.actor(state_batch).probs
+        a_dist = agent.actor(state_batch)
+        prob_a = a_dist.probs
         vals = torch.min(agent.critic1(state_batch), agent.critic2(state_batch))
-        actor_loss = (
-            (prob_a * (alpha.detach() * torch.log(prob_a)) * -vals)
-            .sum(1, keepdim=True)
-            .mean()
-        )
+        actor_loss = -(
+            (prob_a * vals).sum(1) - (alpha.detach() * a_dist.entropy())
+        ).mean()
         actor_optimizer.zero_grad()
         actor_loss.backward()
         if actor_clip:
@@ -633,11 +632,7 @@ def learn_discrete(
         ##################
         ## ALPHA UPDATE ##
         ##################
-        alpha_loss = (
-            (prob_a.detach() * (-alpha * (torch.log(prob_a.detach()) + target_entropy)))
-            .sum(1, keepdim=True)
-            .mean()
-        )
+        alpha_loss = (alpha * (a_dist.entropy() + target_entropy).detach()).mean()
         log_alpha_optimizer.zero_grad()
         alpha_loss.backward()
         log_alpha_optimizer.step()
