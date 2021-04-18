@@ -5,7 +5,7 @@ import torch
 from . import envs, utils
 
 
-def run_env(agent, env, episodes, max_steps, render=False, verbosity=1):
+def run_env(agent, env, episodes, max_steps, render=False, verbosity=1, discount=1.0):
     episode_return_history = []
     if render:
         env.render("rgb_array")
@@ -13,14 +13,14 @@ def run_env(agent, env, episodes, max_steps, render=False, verbosity=1):
         episode_return = 0.0
         state = env.reset()
         done, info = False, {}
-        for _ in range(max_steps):
+        for step_num in range(max_steps):
             if done:
                 break
             action = agent.forward(state)
             state, reward, done, info = env.step(action)
             if render:
                 env.render("rgb_array")
-            episode_return += reward
+            episode_return += reward * (discount ** step_num)
         if verbosity:
             print(f"Episode {episode}:: {episode_return}")
         episode_return_history.append(episode_return)

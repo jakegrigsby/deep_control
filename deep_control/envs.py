@@ -1,9 +1,28 @@
 import argparse
 import random
 from collections import deque
+import math
 
 import gym
 import numpy as np
+
+
+class ActionRepeatWrapper(gym.Wrapper):
+    def __init__(self, env, repeat_multiplier=8):
+        super().__init__(env)
+        self.action_space = gym.spaces.Box(
+            -1.0, 1.0, shape=(1 + self.env.action_space.shape[0],)
+        )
+        self.repeat_multiplier = repeat_multiplier / 2.0
+
+    def step(self, action):
+        repeat_action = max(math.floor((action[0] + 1.0) * self.repeat_multiplier), 1)
+        main_action = action[1:]
+        total_reward = 0
+        for _ in range(repeat_action):
+            next_state, reward, done, _ = self.env.step(main_action)
+            total_reward += reward
+        return next_state, total_reward, done, {}
 
 
 class ChannelsFirstWrapper(gym.ObservationWrapper):

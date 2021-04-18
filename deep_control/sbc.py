@@ -21,6 +21,7 @@ class SBCAgent:
         ensemble_size=5,
         actor_net_cls=nets.StochasticActor,
         hidden_size=1024,
+        beta_dist=False,
     ):
         self.actors = [
             actor_net_cls(
@@ -28,7 +29,7 @@ class SBCAgent:
                 act_space_size,
                 log_std_low,
                 log_std_high,
-                dist_impl="pyd",
+                dist_impl="beta" if beta_dist else "pyd",
                 hidden_size=hidden_size,
             )
             for _ in range(ensemble_size)
@@ -85,6 +86,7 @@ def sbc(
     test_env,
     num_steps_offline=1_000_000,
     batch_size=256,
+    log_prob_clip=None,
     max_episode_steps=100_000,
     actor_lr=1e-4,
     eval_interval=5000,
@@ -143,6 +145,7 @@ def sbc(
             batch_size=batch_size,
             actor_optimizer=actor_optimizer,
             actor_clip=actor_clip,
+            log_prob_clip=log_prob_clip,
         )
 
         if (step % eval_interval == 0) or (step == num_steps_offline - 1):
@@ -162,7 +165,7 @@ def sbc(
 
 
 def learn_sbc(
-    buffer, agent, batch_size, actor_optimizer, actor_clip,
+    buffer, agent, batch_size, actor_optimizer, actor_clip, log_prob_clip,
 ):
     agent.train()
 
@@ -181,6 +184,8 @@ def learn_sbc(
         # maximize the probability that the agent takes the demonstration's action in this state
         dist = actor(state_batch)
         logp_demo_act = dist.log_prob(action_batch).sum(-1, keepdim=True)
+        if log_prob_clip:
+            logp_demo_act = logp_demo_act.clamp(-log_prob_clip, log_prob_clip)
         actor_loss += -logp_demo_act.mean()
 
     # actor gradient step
