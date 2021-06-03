@@ -26,7 +26,7 @@ def train_d4rl_awac(args):
     dset = d4rl.qlearning_dataset(test_env)
     dset_size = dset["observations"].shape[0]
     # create replay buffer
-    buffer = dc.replay.ReplayBuffer(
+    buffer = dc.replay.PrioritizedReplayBuffer(
         size=dset_size,
         state_shape=state_space.shape,
         state_dtype=float,

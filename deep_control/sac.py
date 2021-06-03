@@ -140,6 +140,7 @@ def sac(
     critic_l2=0.0,
     target_delay=2,
     actor_delay=1,
+    target_entropy="auto",
     save_interval=100_000,
     name="sac_run",
     render=False,
@@ -221,10 +222,13 @@ def sac(
     log_alpha = torch.Tensor([math.log(init_alpha)]).to(device)
     log_alpha.requires_grad = True
     log_alpha_optimizer = torch.optim.Adam([log_alpha], lr=alpha_lr, betas=(0.5, 0.999))
-    if not discrete_actions:
-        target_entropy = -train_env.action_space.shape[0]
-    else:
-        target_entropy = -math.log(1.0 / train_env.action_space.n) * 0.98
+
+    if target_entropy is "auto":
+        if not discrete_actions:
+            target_entropy = -train_env.action_space.shape[0]
+        else:
+            target_entropy = -math.log(1.0 / train_env.action_space.n) * 0.98
+
     if self_regularized:
         # the critic target improvement ratio is annealed during training
         critic_target_imp_slope = (

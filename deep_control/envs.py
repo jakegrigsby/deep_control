@@ -7,7 +7,7 @@ import gym
 import numpy as np
 
 
-class ActionRepeatWrapper(gym.Wrapper):
+class ActionRepeatOutputWrapper(gym.Wrapper):
     def __init__(self, env, repeat_multiplier=8):
         super().__init__(env)
         self.action_space = gym.spaces.Box(
@@ -320,6 +320,26 @@ class ClipReward(gym.RewardWrapper):
 
     def reward(self, rew):
         return max(min(rew, self._clip_high), self._clip_low)
+
+
+class ScaleReward(gym.RewardWrapper):
+    def __init__(self, env, scale=1.0):
+        super().__init__(env)
+        self.scale = scale
+
+    def reward(self, rew):
+        return self.scale * rew
+
+
+class DeltaReward(gym.RewardWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self._old_rew = 0
+
+    def reward(self, rew):
+        delta_rew = rew - self._old_rew
+        self._old_rew = rew
+        return delta_rew
 
 
 def load_dmc(

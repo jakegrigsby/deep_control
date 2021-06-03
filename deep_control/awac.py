@@ -12,6 +12,7 @@ import torch.distributions as pyd
 import tqdm
 
 from . import envs, nets, replay, run, utils, device, sac
+from deep_control.adv_estimator import AdvantageEstimator, AdvEstimatorFilter
 
 
 class AWACAgent(sac.SACAgent):
@@ -47,11 +48,12 @@ def awac(
     gradient_updates_per_step=1,
     transitions_per_online_step=1,
     max_episode_steps=100_000,
+    actor_per=True,
     batch_size=1024,
     tau=0.005,
     beta=1.0,
     crr_function="binary",
-    adv_method="max",
+    adv_method="mean",
     adv_method_n=4,
     actor_lr=1e-4,
     critic_lr=1e-4,
@@ -106,6 +108,11 @@ def awac(
         weight_decay=actor_l2,
         betas=(0.9, 0.999),
     )
+    # set up adv filter
+    adv_estimator = AdvantageEstimator(
+        agent.actor, [agent.critic1, agent.critic2], method=adv_method, n=adv_method_n
+    )
+    adv_filter = AdvEstimatorFilter(adv_estimator, crr_function, beta=beta)
 
     ###################
     ## TRAINING LOOP ##
@@ -143,6 +150,7 @@ def awac(
                 buffer=buffer,
                 target_agent=target_agent,
                 agent=agent,
+                adv_filter=adv_filter,
                 actor_optimizer=actor_optimizer,
                 critic_optimizer=critic_optimizer,
                 batch_size=batch_size,
@@ -150,10 +158,7 @@ def awac(
                 critic_clip=critic_clip,
                 actor_clip=actor_clip,
                 update_policy=step % actor_delay == 0,
-                beta=beta,
-                crr_function=crr_function,
-                adv_method=adv_method,
-                adv_method_n=adv_method_n,
+                actor_per=actor_per,
             )
 
             # move target model towards training model
@@ -183,6 +188,7 @@ def learn_awac(
     buffer,
     target_agent,
     agent,
+    adv_filter,
     actor_optimizer,
     critic_optimizer,
     batch_size,
@@ -190,29 +196,30 @@ def learn_awac(
     critic_clip,
     actor_clip,
     update_policy=True,
-    beta=1.0,
-    crr_function="binary",
-    adv_method="max",
-    adv_method_n=4,
+    actor_per=True,
 ):
-    per = isinstance(buffer, replay.PrioritizedReplayBuffer)
-    if per:
-        batch, imp_weights, priority_idxs = buffer.sample(batch_size)
-        imp_weights = imp_weights.to(device)
+    if actor_per:
+        assert isinstance(buffer, replay.PrioritizedReplayBuffer)
+        # sample with priorities for actor update
+        actor_batch, *_ = buffer.sample(batch_size)
+        # critic samples uniformly to find new high-adv experience
+        critic_batch, priority_idxs = buffer.sample_uniform(batch_size)
     else:
         batch = buffer.sample(batch_size)
+        actor_batch = batch
+        critic_batch = batch
 
-    state_batch, action_batch, reward_batch, next_state_batch, done_batch = batch
+    agent.train()
+    ###################
+    ## CRITIC UPDATE ##
+    ###################
+    state_batch, action_batch, reward_batch, next_state_batch, done_batch = critic_batch
     state_batch = state_batch.to(device)
     next_state_batch = next_state_batch.to(device)
     action_batch = action_batch.to(device)
     reward_batch = reward_batch.to(device)
     done_batch = done_batch.to(device)
 
-    agent.train()
-    ###################
-    ## CRITIC UPDATE ##
-    ###################
     with torch.no_grad():
         action_dist_s1 = agent.actor(next_state_batch)
         action_s1 = action_dist_s1.rsample()
@@ -229,8 +236,6 @@ def learn_awac(
     td_error1 = td_target - agent_critic1_pred
     td_error2 = td_target - agent_critic2_pred
     critic_loss = 0.5 * (td_error1 ** 2 + td_error2 ** 2)
-    if per:
-        critic_loss *= imp_weights
     critic_loss = critic_loss.mean()
     critic_optimizer.zero_grad()
     critic_loss.backward()
@@ -240,52 +245,25 @@ def learn_awac(
         )
     critic_optimizer.step()
 
+    if actor_per:
+        with torch.no_grad():
+            adv = adv_filter.adv_estimator(state_batch, action_batch)
+        new_priorities = (F.relu(adv) + 1e-5).cpu().detach().squeeze(1).numpy()
+        buffer.update_priorities(priority_idxs, new_priorities)
+
     if update_policy:
         ##################
         ## ACTOR UPDATE ##
         ##################
+        state_batch, *_ = actor_batch
+        state_batch = state_batch.to(device)
+
         dist = agent.actor(state_batch)
+        actions = dist.sample()
+        logp_a = dist.log_prob(actions).sum(-1, keepdim=True)
         with torch.no_grad():
-            # generate n candidate actions
-            agent_actions = [dist.sample() for _ in range(adv_method_n)]
-            # evaluate the value of each sampled action
-            val = torch.stack(
-                [
-                    torch.min(
-                        agent.critic1(state_batch, agent_actions[i]),
-                        agent.critic2(state_batch, agent_actions[i]),
-                    )
-                    for i in range(adv_method_n)
-                ],
-                dim=0,
-            )
-            # use the sampled q values to form an estimate of the value function
-            if adv_method == "max":
-                # use the highest q value to get a pessimistic adv estimate
-                val = val.max(0).values
-            elif adv_method == "mean":
-                # use the mean val
-                val = val.mean(0)
-            # compute value of the offline actions
-            q = torch.min(
-                agent.critic1(state_batch, action_batch),
-                agent.critic2(state_batch, action_batch),
-            )
-            # compare the offline actions to the value to get the advantage
-            adv = q - val
-            if crr_function == "normalize":
-                # The importance of each update is in (0, 1) and sums to 1.
-                # reweight by total batch size. Use beta as a softmax temperature.
-                adv = batch_size * F.softmax(adv / beta, dim=0)
-            elif crr_function == "exp":
-                # clamp the advantages in a reasonable range and then exp with beta
-                # as in the paper. Early tests show the clamp is very helpful.
-                adv = (adv.clamp(-5.0, 1.0) / beta).exp()
-            elif crr_function == "binary":
-                # only use transitions with positive advantage.
-                adv = (adv >= 0.0).float()
-        logp_a = dist.log_prob(action_batch).sum(-1, keepdim=True)
-        actor_loss = -(logp_a * adv).mean()
+            filtered_adv = adv_filter(state_batch, actions)
+        actor_loss = -(logp_a * filtered_adv).mean()
 
         actor_optimizer.zero_grad()
         actor_loss.backward()
@@ -293,22 +271,18 @@ def learn_awac(
             torch.nn.utils.clip_grad_norm_(agent.actor.parameters(), actor_clip)
         actor_optimizer.step()
 
-    if per:
-        new_priorities = (abs(td_error1) + 1e-5).cpu().detach().squeeze(1).numpy()
-        buffer.update_priorities(priority_idxs, new_priorities)
-
 
 def add_args(parser):
     parser.add_argument(
         "--num_steps_offline",
         type=int,
-        default=25_000,
+        default=500_000,
         help="Number of steps of offline learning",
     )
     parser.add_argument(
         "--num_steps_online",
         type=int,
-        default=500_000,
+        default=50_000,
         help="Number of steps of online learning",
     )
     parser.add_argument(
@@ -417,11 +391,6 @@ def add_args(parser):
         help="how many gradient updates to make per training step",
     )
     parser.add_argument(
-        "--prioritized_replay",
-        action="store_true",
-        help="flag that enables use of prioritized experience replay",
-    )
-    parser.add_argument(
         "--skip_save_to_disk",
         action="store_true",
         help="flag to skip saving agent params to disk during training",
@@ -453,12 +422,13 @@ def add_args(parser):
         "--crr_function",
         type=str,
         default="binary",
-        help="Approach for adjusting advantage weights. Choices include {None, 'normalized', 'exp', 'binary'}.",
+        choices=["binary", "exp", "exp_norm"],
+        help="Approach for adjusting advantage weights",
     )
     parser.add_argument(
         "--adv_method",
         type=str,
-        default="max",
+        default="mean",
         help="Approach for estimating the advantage function. Choices include {'max', 'mean'}.",
     )
     parser.add_argument(
