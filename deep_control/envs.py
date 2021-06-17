@@ -6,8 +6,39 @@ import math
 import gym
 import numpy as np
 
+class PersistenceAwareWrapper(gym.Wrapper):
+    def __init__(self, env, k=1, return_history=True, discount=1.0):
+        super().__init__(env)
+        self.k = k
+        self.return_history = return_history
+        self.observation_space.shape = (self.observation_space.shape[0] + 1,)
+        self.discount = discount
 
-class ActionRepeatWrapper(gym.Wrapper):
+    def step(self, action):
+        reward_history = np.zeros((self.k,))
+        done = False
+        for step in range(self.k):
+            if not done:
+                next_state, reward, done, _ = self.env.step(action)
+                reward_history[step] = reward * self.discount ** step
+            else:
+                reward_history[step] = 0
+        if self.return_history:
+            return self.obs(next_state), reward_history, done, {}
+        else:
+            return self.obs(next_state), reward_history.sum(), done, {}
+
+    def obs(self, state):
+        return np.concatenate([np.array((self.k,)), state], axis=0)
+
+    def reset(self):
+        return self.obs(self.env.reset())
+
+    def set_k(self, k):
+        assert k > 0, "attempted to set action repeat <= 0"
+        self.k = k
+
+class ActionRepeatOutputWrapper(gym.Wrapper):
     def __init__(self, env, repeat_multiplier=8):
         super().__init__(env)
         self.action_space = gym.spaces.Box(
@@ -322,6 +353,26 @@ class ClipReward(gym.RewardWrapper):
         return max(min(rew, self._clip_high), self._clip_low)
 
 
+class ScaleReward(gym.RewardWrapper):
+    def __init__(self, env, scale=1.0):
+        super().__init__(env)
+        self.scale = scale
+
+    def reward(self, rew):
+        return self.scale * rew
+
+
+class DeltaReward(gym.RewardWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self._old_rew = 0
+
+    def reward(self, rew):
+        delta_rew = rew - self._old_rew
+        self._old_rew = rew
+        return delta_rew
+
+
 def load_dmc(
     domain_name,
     task_name,
@@ -337,7 +388,7 @@ def load_dmc(
     **_,
 ):
     """
-    Load a task from the deepmind control suite. 
+    Load a task from the deepmind control suite.
 
     Uses dmc2gym (https://github.com/denisyarats/dmc2gym)
 

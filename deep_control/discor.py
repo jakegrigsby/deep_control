@@ -25,18 +25,28 @@ class DisCorAgent:
         actor_net=nets.StochasticActor,
         critic_net=nets.BigCritic,
         delta_net=nets.BigCritic,
+        hidden_size=1024,
     ):
         self.actor = actor_net(
-            obs_space_size, act_space_size, log_std_low, log_std_high, dist_impl="pyd",
+            obs_space_size,
+            act_space_size,
+            log_std_low,
+            log_std_high,
+            hidden_size=hidden_size,
+            dist_impl="pyd",
         )
-        self.critic1 = critic_net(obs_space_size, act_space_size)
-        self.critic2 = critic_net(obs_space_size, act_space_size)
+        self.critic1 = critic_net(
+            obs_space_size, act_space_size, hidden_size=hidden_size
+        )
+        self.critic2 = critic_net(
+            obs_space_size, act_space_size, hidden_size=hidden_size
+        )
 
         # delta networks are similar to critic networks but learn
         # the error between the critic and the target in a given (s, a).
         # the paper suggests using a slightly larger Q network for the deltas.
-        self.delta1 = delta_net(obs_space_size, act_space_size)
-        self.delta2 = delta_net(obs_space_size, act_space_size)
+        self.delta1 = delta_net(obs_space_size, act_space_size, hidden_size=hidden_size)
+        self.delta2 = delta_net(obs_space_size, act_space_size, hidden_size=hidden_size)
 
     def to(self, device):
         self.actor = self.actor.to(device)

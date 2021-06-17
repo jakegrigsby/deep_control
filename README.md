@@ -100,6 +100,11 @@ Description: TD3 with a stochastic policy and a modified actor update that makes
 Code: `deep_control.awac`
 Examples: `examples/d4rl/awac.py`
 
+#### Automatic Actor Critic (AAC)
+Paper: [Towards Automatic Actor-Critic Solutions to Continuous Control](https://arxiv.org/abs/2106.08918), Grigsby et al., 2021
+
+Description: AAC uses a genetic algorithm to automatically tune the hyperparameters of SAC. A population of SAC agents is trained in parallel with a shared relay buffer and several design decisions that reduce hyperparameter sensitivity while (mostly) preserving sample efficiency. Please refer to the paper for more details. This is the official author implementation.
+
 #### Model Based Policy Optimization (MBPO)
 Paper: [When to Trust Your Model: Model-Based Policy Optimization](https://arxiv.org/abs/1906.08253), Janner et al., 2019.
 
