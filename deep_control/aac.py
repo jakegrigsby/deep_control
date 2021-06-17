@@ -1,3 +1,8 @@
+"""
+A (temporarily) messy port of the Automatic Actor Critic codebase (https://arxiv.org/abs/2106.08918)
+into the rest of deep_control.
+"""
+
 from functools import total_ordering
 from dataclasses import dataclass
 import random
