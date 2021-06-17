@@ -95,7 +95,8 @@ Examples: `examples/d4rl/sbc.py`
 #### Advantage Weighted Actor Critic (AWAC) and Critic Regularized Regression (CRR)
 Paper: [Accelerating Online Reinforcement Learning with Offline Datasets](https://arxiv.org/abs/2006.09359), Nair et al., 2020. & [Critic Regularized Regression](https://arxiv.org/abs/2006.15134), Wang et al., 2020.
 
-Description: TD3 with a stochastic policy and a modified actor update that makes better use of offline experience before finetuning in the online environment. The current implementation is a mix between AWAC and CRR. We allow for online finetuning and use standard critic networks as in AWAC, but add the binary advantage function, and max/mean advantage estimates from CRR.
+Description: TD3 with a stochastic policy and a modified actor update that makes better use of offline experience before finetuning in the online environment. The current implementation is a mix between AWAC and CRR. We allow for online finetuning and use standard critic networks as in AWAC, but add the binary advantage function, and max/mean advantage estimates from CRR. The `actor_per` experience prioritization trick is discussed in [A Closer Look at Advantage-Filtered Behavioral Cloning
+in High-Noise Datasets](https://csdmp.github.io/docs/grigsby2021.pdf), Grigsby, 2021.
 
 Code: `deep_control.awac`
 Examples: `examples/d4rl/awac.py`
@@ -104,6 +105,8 @@ Examples: `examples/d4rl/awac.py`
 Paper: [Towards Automatic Actor-Critic Solutions to Continuous Control](https://arxiv.org/abs/2106.08918), Grigsby et al., 2021
 
 Description: AAC uses a genetic algorithm to automatically tune the hyperparameters of SAC. A population of SAC agents is trained in parallel with a shared relay buffer and several design decisions that reduce hyperparameter sensitivity while (mostly) preserving sample efficiency. Please refer to the paper for more details. This is the official author implementation.
+
+Code: `deep_control.aac`
 
 #### Model Based Policy Optimization (MBPO)
 Paper: [When to Trust Your Model: Model-Based Policy Optimization](https://arxiv.org/abs/1906.08253), Janner et al., 2019.
