@@ -6,6 +6,7 @@ import math
 import gym
 import numpy as np
 
+
 class PersistenceAwareWrapper(gym.Wrapper):
     def __init__(self, env, k=1, return_history=True, discount=1.0):
         super().__init__(env)
@@ -37,6 +38,7 @@ class PersistenceAwareWrapper(gym.Wrapper):
     def set_k(self, k):
         assert k > 0, "attempted to set action repeat <= 0"
         self.k = k
+
 
 class ActionRepeatOutputWrapper(gym.Wrapper):
     def __init__(self, env, repeat_multiplier=8):
@@ -89,7 +91,10 @@ class NormalizeContinuousActionSpace(gym.ActionWrapper):
         super().__init__(env)
         self._true_action_space = env.action_space
         self.action_space = gym.spaces.Box(
-            low=-1.0, high=1.0, shape=self._true_action_space.shape, dtype=np.float32,
+            low=-1.0,
+            high=1.0,
+            shape=self._true_action_space.shape,
+            dtype=np.float32,
         )
 
     def action(self, action):
@@ -197,6 +202,7 @@ class FrameStack(gym.Wrapper):
         self._k = num_stack
         self._frames = deque([], maxlen=num_stack)
         shp = env.observation_space.shape
+        breakpoint()
         self.observation_space = gym.spaces.Box(
             low=0,
             high=1,

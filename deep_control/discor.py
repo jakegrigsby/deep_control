@@ -197,7 +197,10 @@ def discor(
     target_agent.train()
 
     critic_optimizer = torch.optim.Adam(
-        chain(agent.critic1.parameters(), agent.critic2.parameters(),),
+        chain(
+            agent.critic1.parameters(),
+            agent.critic2.parameters(),
+        ),
         lr=critic_lr,
         weight_decay=critic_l2,
         betas=(0.9, 0.999),
@@ -210,7 +213,10 @@ def discor(
     )
     # pair of delta networks will be optimized similar to critics
     delta_optimizer = torch.optim.Adam(
-        chain(agent.delta1.parameters(), agent.delta2.parameters(),),
+        chain(
+            agent.delta1.parameters(),
+            agent.delta2.parameters(),
+        ),
         lr=delta_lr,
         weight_decay=delta_l2,
         betas=(0.9, 0.999),

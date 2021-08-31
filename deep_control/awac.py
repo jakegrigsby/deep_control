@@ -97,7 +97,10 @@ def awac(
     target_agent.train()
     # set up optimizers
     critic_optimizer = torch.optim.Adam(
-        chain(agent.critic1.parameters(), agent.critic2.parameters(),),
+        chain(
+            agent.critic1.parameters(),
+            agent.critic2.parameters(),
+        ),
         lr=critic_lr,
         weight_decay=critic_l2,
         betas=(0.9, 0.999),

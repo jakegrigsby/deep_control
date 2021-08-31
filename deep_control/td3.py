@@ -124,7 +124,7 @@ def td3(
     **_,
 ):
     """
-    Train `agent` on `train_env` with Twin Delayed Deep Deterministic Policy 
+    Train `agent` on `train_env` with Twin Delayed Deep Deterministic Policy
     Gradient algorithm, and evaluate on `test_env`.
 
     Reference: https://arxiv.org/abs/1802.09477
@@ -155,7 +155,10 @@ def td3(
 
     # set up optimizers
     critic_optimizer = torch.optim.Adam(
-        chain(agent.critic1.parameters(), agent.critic2.parameters(),),
+        chain(
+            agent.critic1.parameters(),
+            agent.critic2.parameters(),
+        ),
         lr=critic_lr,
         weight_decay=critic_l2,
         betas=(0.9, 0.999),
@@ -275,7 +278,11 @@ def learn(
             target_noise_scale * torch.randn(*target_action_s1.shape).to(device), -c, c
         )
         # target smoothing
-        target_action_s1 = torch.clamp(target_action_s1 + target_noise, -1.0, 1.0,)
+        target_action_s1 = torch.clamp(
+            target_action_s1 + target_noise,
+            -1.0,
+            1.0,
+        )
         target_action_value_s1 = torch.min(
             target_agent.critic1(next_state_batch, target_action_s1),
             target_agent.critic2(next_state_batch, target_action_s1),
@@ -324,7 +331,10 @@ def learn(
 
 def add_args(parser):
     parser.add_argument(
-        "--num_steps", type=int, default=10 ** 6, help="number of training steps",
+        "--num_steps",
+        type=int,
+        default=10 ** 6,
+        help="number of training steps",
     )
     parser.add_argument(
         "--transitions_per_step",

@@ -72,7 +72,10 @@ def tsr_caql(
 
     # set up optimizers
     critic_optimizer = torch.optim.Adam(
-        chain(agent.critic1.parameters(), agent.critic2.parameters(),),
+        chain(
+            agent.critic1.parameters(),
+            agent.critic2.parameters(),
+        ),
         lr=critic_lr,
         weight_decay=critic_l2,
         betas=(0.9, 0.999),
@@ -443,5 +446,6 @@ def add_args(parser):
         help="Stop critic updates when loss drops by this factor. The GRAC paper calls this alpha",
     )
     parser.add_argument(
-        "--debug_logs", action="store_true",
+        "--debug_logs",
+        action="store_true",
     )

@@ -16,4 +16,5 @@ from . import (
     sunrise,
     sbc,
     awac,
+    aac,
 )
