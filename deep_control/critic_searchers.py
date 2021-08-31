@@ -62,8 +62,8 @@ class _CEM:
 
     def ask(self, pop_size):
         """
-		Returns a list of candidates parameters
-		"""
+        Returns a list of candidates parameters
+        """
         epsilon = torch.randn(
             self.batch_size, pop_size, self.num_params, device=self.device
         )
@@ -76,9 +76,9 @@ class _CEM:
 
     def tell(self, solutions, scores):
         """
-		Updates the distribution
-		returns the best solution
-		"""
+        Updates the distribution
+        returns the best solution
+        """
         scores = scores.clone().squeeze()
         scores *= -1
         if len(scores.shape) == 1:
@@ -105,9 +105,9 @@ class _CEM:
 
     def get_distrib_params(self):
         """
-		Returns the parameters of the distrubtion:
-		the mean and sigma
-		"""
+        Returns the parameters of the distrubtion:
+        the mean and sigma
+        """
         return self.mu.clone(), self.cov.clone()
 
 

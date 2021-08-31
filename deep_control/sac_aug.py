@@ -135,7 +135,10 @@ def sac_aug(
 
     # create network optimizers
     critic_optimizer = torch.optim.Adam(
-        chain(agent.critic1.parameters(), agent.critic2.parameters(),),
+        chain(
+            agent.critic1.parameters(),
+            agent.critic2.parameters(),
+        ),
         lr=critic_lr,
         weight_decay=critic_l2,
         betas=(0.9, 0.999),
@@ -341,7 +344,11 @@ def learn_from_pixels(
     critic_loss.backward()
     if critic_clip:
         torch.nn.utils.clip_grad_norm_(
-            chain(agent.critic1.parameters(), agent.critic2.parameters(),), critic_clip,
+            chain(
+                agent.critic1.parameters(),
+                agent.critic2.parameters(),
+            ),
+            critic_clip,
         )
     critic_optimizer.step()
     encoder_optimizer.step()
@@ -379,7 +386,10 @@ def learn_from_pixels(
 
 def add_args(parser):
     parser.add_argument(
-        "--num_steps", type=int, default=250_000, help="Number of training steps.",
+        "--num_steps",
+        type=int,
+        default=250_000,
+        help="Number of training steps.",
     )
     parser.add_argument(
         "--transitions_per_step",
@@ -422,13 +432,22 @@ def add_args(parser):
         help="Determines how quickly the target agent's encoder network params catch up to the trained agent. This is typically set higher than mlp_tau because the encoder is used in both actor and critic updates.",
     )
     parser.add_argument(
-        "--actor_lr", type=float, default=1e-3, help="Actor network learning rate",
+        "--actor_lr",
+        type=float,
+        default=1e-3,
+        help="Actor network learning rate",
     )
     parser.add_argument(
-        "--critic_lr", type=float, default=1e-3, help="Critic networks' learning rate",
+        "--critic_lr",
+        type=float,
+        default=1e-3,
+        help="Critic networks' learning rate",
     )
     parser.add_argument(
-        "--gamma", type=float, default=0.99, help="POMDP discount factor",
+        "--gamma",
+        type=float,
+        default=0.99,
+        help="POMDP discount factor",
     )
     parser.add_argument(
         "--init_alpha",

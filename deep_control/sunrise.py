@@ -161,7 +161,7 @@ def sunrise(
     **kwargs,
 ):
     """
-    "SUNRISE: A Simple Unified Framework for Ensemble Learning 
+    "SUNRISE: A Simple Unified Framework for Ensemble Learning
     in Deep Reinforcement Learning", Lee et al., 2020.
 
     SUNRISE extends SAC by adding:
@@ -179,7 +179,7 @@ def sunrise(
           distributions are averaged at inference time. This is slower
           than other ensembling methods, where the actor trains on all
           of the critics.
-    
+
     Reference: https://arxiv.org/abs/2007.04938
     """
 
@@ -546,7 +546,10 @@ def add_args(parser):
         help="Upper bound for log std of action distribution.",
     )
     parser.add_argument(
-        "--ensemble_size", type=int, default=5, help="SUNRISE ensemble size",
+        "--ensemble_size",
+        type=int,
+        default=5,
+        help="SUNRISE ensemble size",
     )
     parser.add_argument(
         "--ucb_bonus",

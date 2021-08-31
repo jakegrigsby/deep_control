@@ -209,7 +209,11 @@ class LargeDrqAug(DrqAug):
 
 class TranslateAug:
     def __init__(
-        self, batch_size, translate_max=4, *_args, **_kwargs,
+        self,
+        batch_size,
+        translate_max=4,
+        *_args,
+        **_kwargs,
     ):
         self.batch_size = batch_size
         self.translate_max = translate_max
@@ -290,7 +294,10 @@ class CutoutColorAug:
         self.w1 = torch.randint(self.box_min, self.box_max, (self.batch_size,))
         self.h1 = torch.randint(self.box_min, self.box_max, (self.batch_size,))
         self.rand_box = torch.randint(
-            0, 255, size=(self.batch_size, 3, 1, 1), dtype=torch.float32,
+            0,
+            255,
+            size=(self.batch_size, 3, 1, 1),
+            dtype=torch.float32,
         )
 
     def print_parms(self):
@@ -364,9 +371,14 @@ class RotateAug:
         return imgs
 
     def change_randomization_params(self):
-        self.random_inds = torch.randint(
-            4, size=(self.batch_size,),
-        ) * self.batch_size + np.arange(self.batch_size)
+        self.random_inds = (
+            torch.randint(
+                4,
+                size=(self.batch_size,),
+            )
+            * self.batch_size
+            + np.arange(self.batch_size)
+        )
 
     def print_parms(self):
         print(self.random_inds)

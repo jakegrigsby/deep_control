@@ -20,9 +20,14 @@ class DDPGAgent:
         action_space_size,
         actor_net_cls=nets.BaselineActor,
         critic_net_cls=nets.BaselineCritic,
+        hidden_size=256,
     ):
-        self.actor = actor_net_cls(obs_space_size, action_space_size)
-        self.critic = critic_net_cls(obs_space_size, action_space_size)
+        self.actor = actor_net_cls(
+            obs_space_size, action_space_size, hidden_size=hidden_size
+        )
+        self.critic = critic_net_cls(
+            obs_space_size, action_space_size, hidden_size=hidden_size
+        )
 
     def to(self, device):
         self.actor = self.actor.to(device)

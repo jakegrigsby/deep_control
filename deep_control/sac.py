@@ -162,7 +162,7 @@ def sac(
 
     Reference: https://arxiv.org/abs/1801.01290 and https://arxiv.org/abs/1812.05905
 
-    Also supports discrete action spaces (ref: https://arxiv.org/abs/1910.07207), 
+    Also supports discrete action spaces (ref: https://arxiv.org/abs/1910.07207),
     and self-regularization (ref: https://arxiv.org/abs/2009.08973v1), which
     eliminates the need for target networks and the tau hyperparameter.
     """
@@ -208,7 +208,10 @@ def sac(
         target_agent.train()
     # set up optimizers
     critic_optimizer = torch.optim.Adam(
-        chain(agent.critic1.parameters(), agent.critic2.parameters(),),
+        chain(
+            agent.critic1.parameters(),
+            agent.critic2.parameters(),
+        ),
         lr=critic_lr,
         weight_decay=critic_l2,
         betas=(0.9, 0.999),

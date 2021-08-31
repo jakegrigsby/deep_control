@@ -165,7 +165,12 @@ def sbc(
 
 
 def learn_sbc(
-    buffer, agent, batch_size, actor_optimizer, actor_clip, log_prob_clip,
+    buffer,
+    agent,
+    batch_size,
+    actor_optimizer,
+    actor_clip,
+    log_prob_clip,
 ):
     agent.train()
 
@@ -284,8 +289,14 @@ def add_args(parser):
         help="Upper bound for log std of action distribution.",
     )
     parser.add_argument(
-        "--ensemble_size", type=int, default=5, help="actor ensemble size",
+        "--ensemble_size",
+        type=int,
+        default=5,
+        help="actor ensemble size",
     )
     parser.add_argument(
-        "--hidden_size", type=int, default=1024, help="actor network hidden dim",
+        "--hidden_size",
+        type=int,
+        default=1024,
+        help="actor network hidden dim",
     )

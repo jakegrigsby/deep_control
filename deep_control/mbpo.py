@@ -352,7 +352,10 @@ def add_args(parser):
         help="How many transitions to store for training the dynamics models",
     )
     parser.add_argument(
-        "--batch_size", type=int, default=512, help="SAC training batch size",
+        "--batch_size",
+        type=int,
+        default=512,
+        help="SAC training batch size",
     )
     parser.add_argument(
         "--tau",
@@ -361,13 +364,22 @@ def add_args(parser):
         help="target network polyak averaging value",
     )
     parser.add_argument(
-        "--actor_lr", type=float, default=1e-4, help="actor learning rate",
+        "--actor_lr",
+        type=float,
+        default=1e-4,
+        help="actor learning rate",
     )
     parser.add_argument(
-        "--critic_lr", type=float, default=1e-4, help="critic learning rate",
+        "--critic_lr",
+        type=float,
+        default=1e-4,
+        help="critic learning rate",
     )
     parser.add_argument(
-        "--gamma", type=float, default=0.99, help="gamma, the discount factor",
+        "--gamma",
+        type=float,
+        default=0.99,
+        help="gamma, the discount factor",
     )
     parser.add_argument(
         "--buffer_size",
@@ -470,7 +482,10 @@ def add_args(parser):
         help="pct of transition data to use as val set during model training",
     )
     parser.add_argument(
-        "--model_lr", type=float, default=1e-4, help="Learning rate for model training",
+        "--model_lr",
+        type=float,
+        default=1e-4,
+        help="Learning rate for model training",
     )
     parser.add_argument(
         "--model_early_stopping_patience",

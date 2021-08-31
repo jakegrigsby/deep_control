@@ -24,14 +24,15 @@ class GRACAgent(sac.SACAgent):
         log_std_high,
         actor_net_cls=nets.StochasticActor,
         critic_net_cls=nets.BigCritic,
+        hidden_size=1024,
     ):
         super().__init__(
-            obs_space_size,
-            act_space_size,
-            log_std_low,
-            log_std_high,
-            actor_net_cls,
-            critic_net_cls,
+            obs_space_size=obs_space_size,
+            act_space_size=act_space_size,
+            log_std_low=log_std_low,
+            log_std_high=log_std_high,
+            actor_net_cls=actor_net_cls,
+            hidden_size=hidden_size,
         )
         self.cem = critic_searchers.CEM(act_space_size, max_action=1.0)
 
@@ -72,9 +73,9 @@ def grac(
 
     GRAC: Self-Guided and Self-Regularized Actor-Critic (https://sites.google.com/view/gracdrl)
 
-    GRAC is a combination of a stochastic policy with 
+    GRAC is a combination of a stochastic policy with
     TD3-like stability improvements and CEM-based action selection
-    like you'd find in Qt-Opt or CAQL. 
+    like you'd find in Qt-Opt or CAQL.
 
     This is a pretty faithful reimplementation of the authors' version
     (https://github.com/stanford-iprl-lab/GRAC/blob/master/GRAC.py), with
@@ -109,7 +110,10 @@ def grac(
 
     # set up optimizers
     critic_optimizer = torch.optim.Adam(
-        chain(agent.critic1.parameters(), agent.critic2.parameters(),),
+        chain(
+            agent.critic1.parameters(),
+            agent.critic2.parameters(),
+        ),
         lr=critic_lr,
         weight_decay=critic_l2,
         betas=(0.9, 0.999),

@@ -13,7 +13,8 @@ from itertools import chain
 from collections import namedtuple
 
 warnings.filterwarnings(
-    action="ignore", category=UserWarning,
+    action="ignore",
+    category=UserWarning,
 )
 
 import tensorboardX
@@ -90,7 +91,10 @@ def learn_critics(member, buffer, batch_size, gamma):
 
 
 def learn_actor(
-    member, buffer, batch_size, target_entropy_mul,
+    member,
+    buffer,
+    batch_size,
+    target_entropy_mul,
 ):
     agent = member.agent
     agent.train()
@@ -167,6 +171,7 @@ class AACAgent:
         critic_net_cls=nets.BigCritic,
         hidden_size=256,
     ):
+        print(hidden_size)
         self.actor = actor_net_cls(
             obs_space_size,
             act_space_size,
@@ -179,10 +184,15 @@ class AACAgent:
         self.critic2 = critic_net_cls(obs_space_size, act_space_size, hidden_size)
 
         self.critic_optimizer = torch.optim.Adam(
-            chain(self.critic1.parameters(), self.critic2.parameters(),), lr=3e-4,
+            chain(
+                self.critic1.parameters(),
+                self.critic2.parameters(),
+            ),
+            lr=3e-4,
         )
         self.online_actor_optimizer = torch.optim.Adam(
-            self.actor.parameters(), lr=3e-4,
+            self.actor.parameters(),
+            lr=3e-4,
         )
         # Trick to make it easier to reload `log_alpha`'s optimizer when changing devices.
         self._log_alpha = torch.nn.Linear(1, 1, bias=False)
@@ -490,7 +500,9 @@ def aac(
     g_param=(-6.5, -1.0, 0.5),
     max_episode_steps=1000,
     batch_size=512,
+    hidden_size=256,
     name="aac_run",
+    **_,
 ):
     """Parallel Implementation of AAC
 
@@ -567,7 +579,10 @@ def aac(
             rand_env.set_k(k)
             max_steps = round(max_episode_steps / k)
             run.warmup_buffer(
-                replay_buffer, rand_env, max_steps + 1, max_steps,
+                replay_buffer,
+                rand_env,
+                max_steps + 1,
+                max_steps,
             )
             if len(replay_buffer) >= warmup_size:
                 pbar.update(warmup_size - prev)
@@ -579,7 +594,9 @@ def aac(
     # Initialize the population
     population = []
     for i in range(population_size):
-        agent = AACAgent(obs_space.shape[0], act_space.shape[0])
+        agent = AACAgent(
+            obs_space.shape[0], act_space.shape[0], hidden_size=hidden_size
+        )
         hparams = Hparams(
             make_int_range(a_param),
             make_int_range(c_param),
@@ -1046,13 +1063,7 @@ def newsvendor():
     )
 
 
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--make_env_func", type=str, required=True, help="Name of domain & task to use."
-    )
+def add_args(parser):
     parser.add_argument("--name", type=str, required=True, help="Name of the run.")
     parser.add_argument(
         "--epochs", type=int, default=250, help="Number of evolutionary epochs."
@@ -1096,21 +1107,3 @@ if __name__ == "__main__":
     parser.add_argument(
         "--k_max", type=int, default=15, help="Maximum value for hyperparam `k`."
     )
-    args = parser.parse_args()
-
-    torch.multiprocessing.set_start_method("spawn")
-    torch.multiprocessing.set_sharing_strategy("file_system")
-
-    for _ in range(args.num_seeds):
-        aac(
-            eval(args.make_env_func),
-            name=args.name,
-            epochs=args.epochs,
-            steps_per_epoch=args.steps_per_epoch,
-            population_size=args.population_size,
-            max_episode_steps=args.max_episode_steps,
-            batch_size=args.batch_size,
-            a_param=(1, args.a_max, args.a_delta),
-            c_param=(1, args.c_max, args.c_delta),
-            k_param=(1, args.k_max, 2),
-        )

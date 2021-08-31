@@ -160,11 +160,11 @@ class BaselineActor(nn.Module):
 
 
 class BaselineCritic(nn.Module):
-    def __init__(self, state_size, action_size):
+    def __init__(self, state_size, action_size, hidden_size=400):
         super().__init__()
-        self.fc1 = nn.Linear(state_size + action_size, 400)
-        self.fc2 = nn.Linear(400, 300)
-        self.out = nn.Linear(300, 1)
+        self.fc1 = nn.Linear(state_size + action_size, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, hidden_size)
+        self.out = nn.Linear(hidden_size, 1)
 
     def forward(self, state, action):
         x = torch.cat((state, action), dim=1)

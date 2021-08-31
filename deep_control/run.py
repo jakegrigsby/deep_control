@@ -84,7 +84,12 @@ def collect_experience_by_steps(
 
 
 def collect_experience_by_rollouts(
-    agent, env, buffer, num_rollouts, max_rollout_length, random_process=None,
+    agent,
+    env,
+    buffer,
+    num_rollouts,
+    max_rollout_length,
+    random_process=None,
 ):
     for rollout in range(num_rollouts):
         state = env.reset()

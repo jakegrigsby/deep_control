@@ -24,12 +24,18 @@ class REDQAgent:
         critic_ensemble_size=10,
         actor_network_cls=nets.StochasticActor,
         critic_network_cls=nets.BigCritic,
+        hidden_size=1024,
     ):
         self.actor = actor_network_cls(
-            obs_space_size, act_space_size, log_std_low, log_std_high, dist_impl="pyd",
+            obs_space_size,
+            act_space_size,
+            log_std_low,
+            log_std_high,
+            dist_impl="pyd",
+            hidden_size=hidden_size,
         )
         self.critics = [
-            critic_network_cls(obs_space_size, act_space_size)
+            critic_network_cls(obs_space_size, act_space_size, hidden_size=hidden_size)
             for _ in range(critic_ensemble_size)
         ]
 
@@ -136,11 +142,11 @@ def redq(
     REDQ is an extension of the clipped double Q learning trick. To create the
     target value, we sample M critic networks from an ensemble of size N. This
     reduces the overestimation bias of the critics, and also allows us to use
-    much higher replay ratios (actor_updates_per_step or critic_updates_per_step 
+    much higher replay ratios (actor_updates_per_step or critic_updates_per_step
     >> transitions_per_step). This makes REDQ very sample efficient, but really
-    hurts wall clock time relative to SAC/TD3. REDQ's sample efficiency makes 
+    hurts wall clock time relative to SAC/TD3. REDQ's sample efficiency makes
     MBPO a more fair comparison, in which case it would be considered fast.
-    REDQ can be applied to just about any actor-critic algorithm; we implement 
+    REDQ can be applied to just about any actor-critic algorithm; we implement
     it on SAC here.
     """
     assert len(agent.critics) >= random_ensemble_size
@@ -320,7 +326,8 @@ def learn_critics(
     critic_loss.backward()
     if critic_clip:
         torch.nn.utils.clip_grad_norm_(
-            chain(*(critic.parameters() for critic in agent.critics)), critic_clip,
+            chain(*(critic.parameters() for critic in agent.critics)),
+            critic_clip,
         )
     critic_optimizer.step()
 
