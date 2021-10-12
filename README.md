@@ -42,7 +42,7 @@ Examples: `examples/dmc/sac.py`, `examples/sacd_demo.py`
 Other References: [Yarats and Kostrikov's implementation](https://github.com/denisyarats/pytorch_sac), [author's implementation](https://github.com/haarnoja/sac).
 
 #### Pixel SAC with Data Augmentation (SAC+AUG)
-Paper: [Measuring Visual Generalization in Continuous Control from Pixels](https://arxiv.org/abs/2010.06740)
+Paper: [Measuring Visual Generalization in Continuous Control from Pixels](https://arxiv.org/abs/2010.06740), Grigsby and Qi, 2020
 
 Description: This is a pixel-specific version of SAC with a few tricks/hyperparemter settings to improve performance. We include many different data augmentation techniques, including those used in [RAD](https://arxiv.org/abs/2004.14990), [DrQ](https://arxiv.org/abs/2004.13649) and [Network Randomization](https://arxiv.org/abs/1910.05396). The DrQ augmentation is turned on by default, and has a huge impact on performance.
 
