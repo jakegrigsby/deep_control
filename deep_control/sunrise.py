@@ -14,6 +14,11 @@ import tqdm
 from . import envs, nets, replay, run, utils, device
 
 
+def clipped_double_q(critics, s, a):
+    val = torch.stack([q(s, a) for q in critics], dim=0).min(0).values
+    return val
+
+
 class SunriseAgent:
     def __init__(
         self,
@@ -23,6 +28,7 @@ class SunriseAgent:
         log_std_high,
         ensemble_size=5,
         ucb_bonus=5.0,
+        hidden_size=512,
         actor_net_cls=nets.StochasticActor,
         critic_net_cls=nets.BigCritic,
     ):
@@ -32,44 +38,66 @@ class SunriseAgent:
                 act_space_size,
                 log_std_low,
                 log_std_high,
+                hidden_size=hidden_size,
                 dist_impl="pyd",
             )
             for _ in range(ensemble_size)
         ]
         self.critics = [
-            critic_net_cls(obs_space_size, act_space_size) for _ in range(ensemble_size)
+            [
+                critic_net_cls(obs_space_size, act_space_size, hidden_size=hidden_size)
+                for _ in range(2)
+            ]
+            for _ in range(ensemble_size)
         ]
         # SUNRISE Eq 6 lambda variable
         self.ucb_bonus = ucb_bonus
 
+    @property
+    def actor_params(self):
+        return chain(*(actor.parameters() for actor in self.actors))
+
+    @property
+    def critic_params(self):
+        critic_params = []
+        for critic_pair in self.critics:
+            for critic in critic_pair:
+                critic_params.append(critic.parameters())
+        return chain(*critic_params)
+
     def to(self, device):
-        for i, (actor, critic) in enumerate(zip(self.actors, self.critics)):
-            self.critics[i] = critic.to(device)
+        for i, (actor, critics) in enumerate(zip(self.actors, self.critics)):
+            for j, critic in enumerate(critics):
+                self.critics[i][j] = critic.to(device)
             self.actors[i] = actor.to(device)
 
     def eval(self):
-        for actor, critic in zip(self.actors, self.critics):
-            critic.eval()
+        for actor, critics in zip(self.actors, self.critics):
+            for critic in critics:
+                critic.eval()
             actor.eval()
 
     def train(self):
-        for actor, critic in zip(self.actors, self.critics):
-            critic.train()
+        for actor, critics in zip(self.actors, self.critics):
+            for critic in critics:
+                critic.train()
             actor.train()
 
     def save(self, path):
-        for i, (actor, critic) in enumerate(zip(self.actors, self.critics)):
+        for i, (actor, critics) in enumerate(zip(self.actors, self.critics)):
             actor_path = os.path.join(path, f"actor{i}.pt")
-            critic_path = os.path.join(path, f"critic{i}.pt")
             torch.save(actor.state_dict(), actor_path)
-            torch.save(critic.state_dict(), critic_path)
+            for j, critic in enumerate(critics):
+                critic_path = os.path.join(path, f"critic{i}_{j}.pt")
+                torch.save(critic.state_dict(), critic_path)
 
     def load(self, path):
-        for i, (actor, critic) in enumerate(zip(self.actors, self.critics)):
+        for i, (actor, critics) in enumerate(zip(self.actors, self.critics)):
             actor_path = os.path.join(path, f"actor{i}.pt")
-            critic_path = os.path.join(path, f"critic{i}.pt")
             actor.load_state_dict(torch.load(actor_path))
-            critic.load_state_dict(torch.load(critic_path))
+            for j, critic in enumerate(critics):
+                critic_path = os.path.join(path, f"critic{i}_{j}.pt")
+                critic.load_state_dict(torch.load(critic_path))
 
     def forward(self, state, from_cpu=True):
         # evaluation forward:
@@ -99,12 +127,10 @@ class SunriseAgent:
                 [actor.forward(state).sample().squeeze(0) for actor in self.actors],
                 dim=0,
             )
-            # evaluate each action on each critic, for NxN q vals
+            # evaluate each action on the min of each pair of critics, for NxN q vals
+            q_inputs = (state.repeat(len(act_candidates), 1), act_candidates)
             q_vals = torch.stack(
-                [
-                    critic(state.repeat(len(act_candidates), 1), act_candidates)
-                    for critic in self.critics
-                ],
+                [clipped_double_q(critics, *q_inputs) for critics in self.critics],
                 dim=0,
             )
             # use mean and std over the critic axis to compute ucb term
@@ -196,18 +222,20 @@ def sunrise(
     agent.train()
     target_agent = copy.deepcopy(agent)
     # initialize all of the critic targets
-    for target_critic, agent_critic in zip(target_agent.critics, agent.critics):
-        utils.hard_update(target_critic, agent_critic)
+    for target_critics, agent_critics in zip(target_agent.critics, agent.critics):
+        for target_critic, agent_critic in zip(target_critics, agent_critics):
+            utils.hard_update(target_critic, agent_critic)
     target_agent.train()
 
     critic_optimizer = torch.optim.Adam(
-        chain(*(critic.parameters() for critic in agent.critics)),
+        agent.critic_params,
         lr=critic_lr,
         weight_decay=critic_l2,
         betas=(0.9, 0.999),
     )
+
     actor_optimizer = torch.optim.Adam(
-        chain(*(actor.parameters() for actor in agent.actors)),
+        agent.actor_params,
         lr=actor_lr,
         weight_decay=actor_l2,
         betas=(0.9, 0.999),
@@ -268,10 +296,11 @@ def sunrise(
             )
 
         if step % target_delay == 0:
-            for (target_critic, agent_critic) in zip(
+            for (target_critics, agent_critics) in zip(
                 target_agent.critics, agent.critics
             ):
-                utils.soft_update(target_critic, agent_critic, tau)
+                for target_critic, agent_critic in zip(target_critics, agent_critics):
+                    utils.soft_update(target_critic, agent_critic, tau)
 
         if (step % eval_interval == 0) or (step == num_steps - 1):
             mean_return = run.evaluate_agent(
@@ -326,42 +355,47 @@ def learn_sunrise(
     with torch.no_grad():
         # compute weighted bellman coeffs using SUNRISE Eq 5
         target_q_std = torch.stack(
-            [q(state_batch, action_batch) for q in target_agent.critics], dim=0
+            [
+                clipped_double_q(critics, state_batch, action_batch)
+                for critics in target_agent.critics
+            ],
+            dim=0,
         ).std(0)
         weights = torch.sigmoid(-target_q_std * weighted_bellman_temp) + 0.5
 
     # now we compute the MSBE of each critic relative to its own target
     critic_loss = 0.0
     total_abs_td_error = 0.0
-    for i, critic in enumerate(agent.critics):
+    for i, critic_pair in enumerate(agent.critics):
         with torch.no_grad():
             # sample an action from actor i
             action_dist_s1 = agent.actors[i](next_state_batch)
             action_s1 = action_dist_s1.rsample()
             logp_a1 = action_dist_s1.log_prob(action_s1).sum(-1, keepdim=True)
             # generate target network's Q(s', a') prediction
-            target_q_s1 = target_agent.critics[i](next_state_batch, action_s1)
+            target_q_s1 = clipped_double_q(
+                target_agent.critics[i], next_state_batch, action_s1
+            )
             # compute TD target value for this critic
             td_target = reward_batch + gamma * (1.0 - done_batch) * (
                 target_q_s1 - (log_alphas[i].exp() * logp_a1)
             )
         # compute MSBE for this critic
-        agent_critic_pred = critic(state_batch, action_batch)
-        td_error = td_target - agent_critic_pred
-        # SUNRISE Eq 4
-        critic_loss += 0.5 * weights * (td_error ** 2)
-        total_abs_td_error += abs(td_error)
+        for critic in critic_pair:
+            agent_critic_pred = critic(state_batch, action_batch)
+            td_error = td_target - agent_critic_pred
+            # SUNRISE Eq 4
+            critic_loss += 0.5 * (td_error ** 2)
+            total_abs_td_error += abs(td_error)
     if per:
         # priority weights can be used in addition to bellman backup weights.
         # this is mentioned in the paper for Rainbow DQN but could apply here.
         critic_loss *= imp_weights
-    critic_loss = critic_loss.mean()
+    critic_loss = (critic_loss * weights).mean() / (i + 1)
     critic_optimizer.zero_grad()
     critic_loss.backward()
     if critic_clip:
-        torch.nn.utils.clip_grad_norm_(
-            chain(*(critic.parameters() for critic in agent.critics)), critic_clip
-        )
+        torch.nn.utils.clip_grad_norm_(agent.critic_params, critic_clip)
     critic_optimizer.step()
 
     ##########################
@@ -374,7 +408,7 @@ def learn_sunrise(
         agent_actions = dist.rsample()
         logp_a = dist.log_prob(agent_actions).sum(-1, keepdim=True)
         # use corresponding critic to evaluate this action
-        critic_pred = agent.critics[i](state_batch, agent_actions)
+        critic_pred = clipped_double_q(agent.critics[i], state_batch, agent_actions)
         actor_loss += -(critic_pred - (log_alphas[i].exp().detach() * logp_a)).mean()
 
         # each agent in the ensemble has its own alpha (entropy) coeff,
@@ -388,14 +422,12 @@ def learn_sunrise(
     actor_optimizer.zero_grad()
     actor_loss.backward()
     if actor_clip:
-        torch.nn.utils.clip_grad_norm_(
-            chain(*(actor.parameters() for actor in agent.actors)), actor_clip
-        )
+        torch.nn.utils.clip_grad_norm_(agent.actor_params, actor_clip)
     actor_optimizer.step()
 
     if per:
         ensemble_size = float(len(agent.actors))
-        avg_abs_td_error = total_abs_td_error / ensemble_size
+        avg_abs_td_error = total_abs_td_error / (ensemble_size * 2)
         new_priorities = (avg_abs_td_error + 1e-5).cpu().detach().squeeze(1).numpy()
         buffer.update_priorities(priority_idxs, new_priorities)
 
