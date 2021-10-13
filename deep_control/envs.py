@@ -262,7 +262,7 @@ def load_gym(env_id="CartPole-v1", seed=None, normalize_action_space=True, **_):
     # optional pybullet import
     try:
         import pybullet
-        import pybulletgym
+        import pybullet_envs
     except ImportError:
         pass
     env = gym.make(env_id)
