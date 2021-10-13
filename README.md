@@ -96,7 +96,7 @@ Examples: `examples/d4rl/sbc.py`
 Paper: [Accelerating Online Reinforcement Learning with Offline Datasets](https://arxiv.org/abs/2006.09359), Nair et al., 2020. & [Critic Regularized Regression](https://arxiv.org/abs/2006.15134), Wang et al., 2020.
 
 Description: TD3 with a stochastic policy and a modified actor update that makes better use of offline experience before finetuning in the online environment. The current implementation is a mix between AWAC and CRR. We allow for online finetuning and use standard critic networks as in AWAC, but add the binary advantage function, and max/mean advantage estimates from CRR. The `actor_per` experience prioritization trick is discussed in [A Closer Look at Advantage-Filtered Behavioral Cloning
-in High-Noise Datasets](https://csdmp.github.io/docs/grigsby2021.pdf), Grigsby, 2021.
+in High-Noise Datasets](https://arxiv.org/abs/2110.04698), Grigsby and Qi, 2021.
 
 Code: `deep_control.awac`
 Examples: `examples/d4rl/awac.py`
