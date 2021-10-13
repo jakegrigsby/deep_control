@@ -171,7 +171,6 @@ class AACAgent:
         critic_net_cls=nets.BigCritic,
         hidden_size=256,
     ):
-        print(hidden_size)
         self.actor = actor_net_cls(
             obs_space_size,
             act_space_size,
@@ -364,6 +363,7 @@ class Worker(mp.Process):
         steps_per_epoch,
         batch_size,
         num_gpus,
+        eval_episodes=10,
     ):
         super().__init__()
         self.id = uid
@@ -382,6 +382,7 @@ class Worker(mp.Process):
         self.steps_per_epoch = steps_per_epoch
         self.batch_size = batch_size
         self.num_gpus = num_gpus
+        self.eval_episodes = eval_episodes
 
     def run(self):
         # Set sharing strategy to avoid errors when sharing agents to main process.
@@ -436,7 +437,7 @@ class Worker(mp.Process):
             member.fitness = run.evaluate_agent(
                 member.agent,
                 self.test_env_wrapper.env,
-                10,
+                self.eval_episodes,
                 self.train_env_wrapper.max_episode_steps,
             )
 
@@ -499,6 +500,7 @@ def aac(
     k_param=(1, 15, 2),
     g_param=(-6.5, -1.0, 0.5),
     max_episode_steps=1000,
+    eval_episodes=10,
     batch_size=512,
     hidden_size=256,
     name="aac_run",
@@ -624,17 +626,18 @@ def aac(
     workers = [
         Worker(
             i,
-            make_env_function,
-            max_episode_steps,
-            replay_buffer,
-            member_queues[i],
-            exp_queue,
-            step_events,
-            epoch_events,
-            epochs,
-            steps_per_epoch,
-            batch_size,
-            num_gpus,
+            make_env_function=make_env_function,
+            max_episode_steps=max_episode_steps,
+            replay_buffer=replay_buffer,
+            member_queue=member_queues[i],
+            exp_queue=exp_queue,
+            step_events=step_events,
+            epoch_events=epoch_events,
+            epochs=epochs,
+            steps_per_epoch=steps_per_epoch,
+            batch_size=batch_size,
+            num_gpus=num_gpus,
+            eval_episodes=eval_episodes,
         )
         for i in range(len(population))
     ]
@@ -737,6 +740,7 @@ def aac(
         else:
             epoch_events[1].set()
             epoch_events[0].clear()
+    return population
 
 
 class PersistenceReplayBufferStorage:
@@ -1106,4 +1110,7 @@ def add_args(parser):
     )
     parser.add_argument(
         "--k_max", type=int, default=15, help="Maximum value for hyperparam `k`."
+    )
+    parser.add_argument(
+        "--eval_episodes", type=int, default=10, help="Episodes per evaluation"
     )

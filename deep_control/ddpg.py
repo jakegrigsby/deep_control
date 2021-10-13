@@ -218,7 +218,7 @@ def ddpg(
 
     if save_to_disk:
         agent.save(save_dir)
-    return agent, learning_curve
+    return agent
 
 
 def learn(
