@@ -1,14 +1,13 @@
 # Deep Control
-## Simple PyTorch implementations of Deep RL algorithms for continuous control research
+## Simple PyTorch Implementations of Deep RL Algorithms for Continuous Control Research
 
 This repository contains re-implementations of Deep RL algorithms for continuous action spaces. Some highlights:
 
-1) Code is readable, and written to be easy to modify for future research.
-2) Train and Test on different environments (for generalization research).
+1) Code is readable, and written to be easy to modify for future research. Many popular Deep RL frameworks are highly modular, which can make it confusing to identify the changes in a new method. Aside from universal components like the replay buffer, network architectures, etc., each implementation in this repo is contained in a single file.
+2) Train and test on different environments (for generalization research).
 3) Built-in Tensorboard logging, parameter saving.
 4) Support for offline (batch) RL.
-5) Quick setup for benchmarks like Gym Mujoco, Atari, Pybullet, and DeepMind Control Suite.
-5) Separate training and learning routines, which make it easy to mix and match techniques that improve the training process with techniques that improve the learning update.
+5) Quick setup for benchmarks like Gym MuJoco, Atari, PyBullet, and DeepMind Control Suite.
 
 ### What's included?
 
@@ -33,8 +32,7 @@ Other References: [author's implementation](https://github.com/sfujim/TD3)
 #### Soft Actor Critic (SAC)
 Paper: [Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor](https://arxiv.org/abs/1801.01290), Haarnoja et al., 2018.
 
-Description: Samples actions from a stochastic actor rather than relying on added exploration noise during training. Uses a TD3-like double critic system. We *do* implement the learnable entropy coefficient approach described in the [follow-up paper](https://arxiv.org/abs/1812.05905). This version also **supports discrete action spaces** and can **avoid using target networks** by
-applying the self-regularized crticic updates from GRAC (see below).
+Description: Samples actions from a stochastic actor rather than relying on added exploration noise during training. Uses a TD3-like double critic system. We *do* implement the learnable entropy coefficient approach described in the [follow-up paper](https://arxiv.org/abs/1812.05905). This version also supports the self-regularized crticic updates from GRAC (see below).
 
 Code: `deep_control.sac`
 Examples: `examples/dmc/sac.py`, `examples/sacd_demo.py`
