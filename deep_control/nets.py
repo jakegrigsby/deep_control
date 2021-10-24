@@ -95,8 +95,8 @@ class StochasticActor(nn.Module):
         self,
         state_space_size,
         act_space_size,
-        log_std_low=-10,
-        log_std_high=2,
+        log_std_low=-10.0,
+        log_std_high=2.0,
         hidden_size=1024,
         dist_impl="pyd",
     ):
@@ -271,32 +271,3 @@ class GracBaselineActor(nn.Module):
         std = F.softplus(self.fc_std(x)) + 1e-3
         dist = pyd.Normal(mean, std)
         return dist
-
-
-class BaselineDiscreteActor(nn.Module):
-    def __init__(self, obs_shape, action_size, hidden_size=300):
-        super().__init__()
-        self.fc1 = nn.Linear(obs_shape, hidden_size)
-        self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.act_p = nn.Linear(hidden_size, action_size)
-
-    def forward(self, state):
-        x = F.relu(self.fc1(state))
-        x = F.relu(self.fc2(x))
-        act_p = F.softmax(self.act_p(x), dim=1)
-        dist = pyd.categorical.Categorical(act_p)
-        return dist
-
-
-class BaselineDiscreteCritic(nn.Module):
-    def __init__(self, obs_shape, action_shape, hidden_size=300):
-        super().__init__()
-        self.fc1 = nn.Linear(obs_shape, hidden_size)
-        self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.out = nn.Linear(hidden_size, action_shape)
-
-    def forward(self, state):
-        x = F.relu(self.fc1(state))
-        x = F.relu(self.fc2(x))
-        vals = self.out(x)
-        return vals

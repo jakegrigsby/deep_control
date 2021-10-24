@@ -12,7 +12,12 @@ class PersistenceAwareWrapper(gym.Wrapper):
         super().__init__(env)
         self.k = k
         self.return_history = return_history
-        self.observation_space.shape = (self.observation_space.shape[0] + 1,)
+        ob_shape = (self.observation_space.shape[0] + 1,)
+        ob_low = np.concatenate(([1], self.observation_space.low))
+        ob_high = np.concatenate(([float("inf")], self.observation_space.high))
+        self.observation_space = gym.spaces.Box(
+            low=ob_low, high=ob_high, shape=ob_shape
+        )
         self.discount = discount
 
     def step(self, action):
