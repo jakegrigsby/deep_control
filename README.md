@@ -44,6 +44,8 @@ Paper: [Measuring Visual Generalization in Continuous Control from Pixels](https
 
 Description: This is a pixel-specific version of SAC with a few tricks/hyperparemter settings to improve performance. We include many different data augmentation techniques, including those used in [RAD](https://arxiv.org/abs/2004.14990), [DrQ](https://arxiv.org/abs/2004.13649) and [Network Randomization](https://arxiv.org/abs/1910.05396). The DrQ augmentation is turned on by default, and has a huge impact on performance.
 
+*Please Note: If you are interested in control from images, these features are implemented much more thoroughly in another repo: [jakegrigsby/super_sac](https://github.com/jakegrigsby/super_sac)*
+
 Code: `deep_control.sac_aug`
 Examples: `examples/dmcr/sac_aug.py`
 
